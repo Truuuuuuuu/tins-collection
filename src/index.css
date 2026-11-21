@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-script: "Dancing Script", "Brush Script MT", cursive;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* White & neutral base with pink accents only. Text pairs checked for WCAG AA (4.5:1+). */
+  --color-canvas: #ffffff;      /* page background */
+  --color-surface: #ffffff;     /* cards, inputs, menus */
+  --color-subtle: #f7f5f6;      /* photo placeholders, quiet fills */
+  --color-line: #ece8ea;        /* borders, dividers */
+  --color-ink: #231f20;         /* main text */
+  --color-muted: #6e6669;       /* secondary text */
+  /* Pink accent: buttons, selected states, badges, highlights */
+  --color-brand: #d6336c;       /* white text on it: 4.6:1 */
+  --color-brand-dark: #b02457;  /* hover / pressed */
+  --color-brand-ink: #c2255c;   /* pink text on white */
+  --color-brand-soft: #fdecf2;  /* faint pink: hovers, selection */
+  --color-blush: #fdf5f8;       /* footer background: muted text keeps 5.4:1, pink text 4.9:1 */
+  --color-blush-line: #f6dfe8;  /* dividers on blush */
+}
+
+html { background: var(--color-canvas); color: var(--color-ink); }
+::selection { background: var(--color-brand-soft); color: var(--color-ink); }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100; }
+@utility btn-primary { @apply btn bg-brand text-white shadow-sm shadow-brand/20 hover:bg-brand-dark; }
+@utility btn-accent { @apply btn bg-brand text-white shadow-sm shadow-brand/20 hover:bg-brand-dark; }
+@utility btn-ghost { @apply btn border border-line bg-surface hover:border-brand hover:text-brand-ink; }
+@utility btn-danger { @apply btn border border-red-200 bg-surface text-red-700 hover:bg-red-50; }
+@utility input { @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none transition placeholder:text-muted/70 focus:border-brand focus:ring-3 focus:ring-brand/15; }
+@utility label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-muted; }
