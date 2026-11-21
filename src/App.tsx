@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom'
 import AdminGuard from './components/AdminGuard'
 import Footer from './components/Footer'
 import Header from './components/Header'
+import ScrollToTop from './components/ScrollToTop'
 import SetupNotice from './components/SetupNotice'
 import { isConfigured } from './lib/supabase'
 import Cart from './pages/Cart'
@@ -17,6 +18,7 @@ const ProductForm = lazy(() => import('./pages/admin/ProductForm'))
 export default function App() {
   return (
     <div className="flex min-h-dvh flex-col">
+      <ScrollToTop />
       <Header />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-6 sm:px-6">
         {!isConfigured ? (
