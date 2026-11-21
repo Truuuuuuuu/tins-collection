@@ -12,7 +12,7 @@ import { imageUrl } from "../lib/images";
 import { flyToCart } from "../lib/flyToCart";
 import { fetchProduct } from "../lib/products";
 import type { Product, Variant } from "../lib/types";
-import { isSoldOut } from "../lib/types";
+import { hasSizes, isSoldOut, sizeLabel } from "../lib/types";
 import { useCart } from "../store/cart";
 
 export default function ProductDetail() {
@@ -74,7 +74,8 @@ export default function ProductDetail() {
     );
     const photo = product.image_paths[activeImage] ?? product.image_paths[0];
     flyToCart([photoRef.current, e.currentTarget], photo ? imageUrl(photo) : undefined);
-    setToast(`Added ${product.name} (${variant.size}) to cart`);
+    const size = sizeLabel(variant.size);
+    setToast(`Added ${product.name}${size ? ` (${size})` : ""} to cart`);
     setQty(1);
   };
 
@@ -172,15 +173,19 @@ export default function ProductDetail() {
           ) : (
             <div className="mt-8 space-y-6">
               <div>
-                <span className="label">Size</span>
-                <SizePicker
-                  variants={product.product_variants}
-                  selectedId={variant?.id ?? null}
-                  onSelect={(v) => {
-                    setVariant(v);
-                    setQty(1);
-                  }}
-                />
+                {hasSizes(product.product_variants) && (
+                  <>
+                    <span className="label">Size</span>
+                    <SizePicker
+                      variants={product.product_variants}
+                      selectedId={variant?.id ?? null}
+                      onSelect={(v) => {
+                        setVariant(v);
+                        setQty(1);
+                      }}
+                    />
+                  </>
+                )}
                 {variant && (
                   <p className="mt-2 text-xs text-muted">
                     {variant.stock <= 3

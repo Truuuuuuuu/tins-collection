@@ -2,14 +2,14 @@ import { Link } from 'react-router-dom'
 import { formatPrice } from '../lib/format'
 import { imageUrl } from '../lib/images'
 import type { Product } from '../lib/types'
-import { isSoldOut } from '../lib/types'
+import { hasSizes, isSoldOut } from '../lib/types'
 import ConditionBadge from './ConditionBadge'
 import SoldOutBadge from './SoldOutBadge'
 
 export default function ProductCard({ product }: { product: Product }) {
   const soldOut = isSoldOut(product)
   const cover = product.image_paths[0]
-  const availableSizes = soldOut ? [] : product.product_variants.filter((v) => v.stock > 0)
+  const availableSizes = soldOut || !hasSizes(product.product_variants) ? [] : product.product_variants.filter((v) => v.stock > 0)
   return (
     <Link to={`/product/${product.id}`} className="group block">
       <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-subtle">

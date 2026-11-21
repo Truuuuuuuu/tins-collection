@@ -5,7 +5,7 @@ import { facebookUrl, mapsUrl, storeAddress } from "../lib/shop";
 import Wordmark from "./Wordmark";
 
 const STEPS = [
-  "Pick your size and add items to your cart.",
+  "Add items to your cart, picking a size for clothes.",
   "Tap “Order via Messenger” and send us the message.",
   "We confirm stock, payment and delivery in the chat.",
 ];
@@ -30,8 +30,7 @@ export default function Footer() {
             <Wordmark />
           </Link>
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted">
-            Brand new and pre-loved pieces, handpicked and in limited stock.
-            Once a size is gone, it's gone.
+            Brand new and pre-loved clothing and accessories, handpicked and in limited stock.
           </p>
         </div>
 

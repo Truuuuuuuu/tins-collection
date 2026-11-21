@@ -8,6 +8,7 @@ import { imageUrl } from '../lib/images'
 import { buildOrderMessage, copyToClipboard, messengerUrl } from '../lib/messenger'
 import { fetchProducts } from '../lib/products'
 import type { Product } from '../lib/types'
+import { sizeLabel } from '../lib/types'
 import { cartTotal, useCart } from '../store/cart'
 
 export default function Cart() {
@@ -83,7 +84,7 @@ export default function Cart() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{l.name}</p>
                   <p className="text-sm text-muted">
-                    {l.size}{l.condition === 'preloved' && ' · Pre-loved'} · {formatPrice(l.price)}
+                    {[sizeLabel(l.size), l.condition === 'preloved' ? 'Pre-loved' : null, formatPrice(l.price)].filter(Boolean).join(' · ')}
                   </p>
                 </div>
                 <p className="shrink-0 font-semibold">{formatPrice(l.price * l.qty)}</p>

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Condition, Product } from '../lib/types'
-import { isSoldOut } from '../lib/types'
+import { isSoldOut, sizeLabel } from '../lib/types'
 
 export interface CartLine {
   productId: string
@@ -51,13 +51,14 @@ export const useCart = create<CartState>()(
         for (const line of get().lines) {
           const product = products.find((p) => p.id === line.productId)
           const variant = product?.product_variants.find((v) => v.id === line.variantId)
+          const label = sizeLabel(line.size) ? `${line.name} (${line.size})` : line.name
           if (!product || !variant || isSoldOut(product) || variant.stock === 0) {
-            changed.push(`${line.name} (${line.size}) is no longer available`)
+            changed.push(`${label} is no longer available`)
             continue
           }
           let updated = { ...line, price: product.price, name: product.name, size: variant.size }
           if (line.qty > variant.stock) {
-            changed.push(`${line.name} (${line.size}) reduced to ${variant.stock}, the stock left`)
+            changed.push(`${label} reduced to ${variant.stock}, the stock left`)
             updated = { ...updated, qty: variant.stock }
           }
           next.push(updated)

@@ -4,7 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { errorMessage } from '../../lib/format'
 import { deleteImages, imageUrl, uploadImage } from '../../lib/images'
 import { createProduct, fetchProduct, updateProduct } from '../../lib/products'
-import { CONDITION_LABEL } from '../../lib/types'
+import CountStepper from '../../components/CountStepper'
+import { CONDITION_LABEL, hasSizes, NO_SIZE } from '../../lib/types'
 import type { Condition, VariantInput } from '../../lib/types'
 
 const MAX_IMAGES = 5
@@ -42,6 +43,10 @@ export default function ProductForm() {
   const [condition, setCondition] = useState<Condition>('new')
   const [soldOut, setSoldOut] = useState(false)
   const [variants, setVariants] = useState<SizeRow[]>([])
+  // Items without sizes (accessories) keep a single stock count instead of size rows.
+  const [sized, setSized] = useState(true)
+  const [plainStock, setPlainStock] = useState(1)
+  const [plainId, setPlainId] = useState<string | undefined>(undefined)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [originalPaths, setOriginalPaths] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -57,7 +62,13 @@ export default function ProductForm() {
       setCategory(p.category)
       setCondition(p.condition)
       setSoldOut(p.is_sold_out)
-      setVariants(p.product_variants.length ? p.product_variants.map((v) => ({ id: v.id, size: v.size, stock: v.stock, fixed: presetIndex(v.size) !== -1 })) : [])
+      if (p.product_variants.length && !hasSizes(p.product_variants)) {
+        setSized(false)
+        setPlainStock(p.product_variants[0].stock)
+        setPlainId(p.product_variants[0].id)
+      } else {
+        setVariants(p.product_variants.map((v) => ({ id: v.id, size: v.size, stock: v.stock, fixed: presetIndex(v.size) !== -1 })))
+      }
       setPhotos(p.image_paths.map((path) => ({ kind: 'stored', path })))
       setOriginalPaths(p.image_paths)
       setLoading(false)
@@ -103,7 +114,10 @@ export default function ProductForm() {
     if (!name.trim()) return 'Name is required'
     const n = Number(price)
     if (!price || Number.isNaN(n) || n < 0) return 'Enter a valid price'
-    if (variants.length === 0) return 'Add at least one size'
+    if (!sized) return plainStock >= 0 && Number.isInteger(plainStock) ? null : 'Stock must be 0 or more'
+    if (variants.length === 0) return 'Add at least one size, or choose "Accessories"'
+    if (variants.some((v) => v.size.trim().toLowerCase() === NO_SIZE.toLowerCase()))
+      return `"${NO_SIZE}" is reserved. Choose "Accessories" instead.`
     const sizes = variants.map((v) => v.size.trim().toLowerCase())
     if (sizes.some((s) => !s)) return 'Every size row needs a name (e.g. S, M, Free size)'
     if (new Set(sizes).size !== sizes.length) return 'Sizes must be unique'
@@ -138,7 +152,9 @@ export default function ProductForm() {
         condition,
         is_sold_out: soldOut,
         image_paths: paths,
-        variants: variants.map((v) => ({ ...v, stock: Number(v.stock) })),
+        variants: sized
+          ? variants.map((v) => ({ ...v, stock: Number(v.stock) }))
+          : [{ id: plainId, size: NO_SIZE, stock: plainStock }],
       }
       if (id) await updateProduct(id, input)
       else await createProduct(input)
@@ -185,7 +201,7 @@ export default function ProductForm() {
               <label
                 key={c}
                 className={`flex min-h-11 cursor-pointer items-center justify-center rounded-lg text-sm font-medium transition has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-brand ${
-                  condition === c ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'
+                  condition === c ? 'bg-brand text-white shadow-sm shadow-brand/20' : 'text-muted hover:text-ink'
                 }`}
               >
                 <input type="radio" name="condition" value={c} className="sr-only" checked={condition === c} onChange={() => setCondition(c)} />
@@ -209,59 +225,90 @@ export default function ProductForm() {
 
       <section className="rounded-2xl border border-line bg-surface p-5">
         <div className="flex items-center justify-between">
-          <h2 className="font-medium">Sizes &amp; stock</h2>
+          <h2 className="font-medium">{sized ? 'Sizes & stock' : 'Stock'}</h2>
         </div>
-        <p className="mt-1 text-sm text-muted">Tap the sizes you have, then set how many of each.</p>
-        <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Common sizes">
-          {PRESET_SIZES.map((size) => {
-            const on = hasSize(size)
-            return (
-              <button
-                key={size}
-                type="button"
-                aria-pressed={on}
-                onClick={() => togglePreset(size)}
-                className={`flex min-h-10 min-w-12 items-center justify-center gap-1 rounded-full border px-4 text-sm font-medium transition active:scale-95 ${
-                  on ? 'border-brand bg-brand text-white' : 'border-line bg-surface hover:border-brand hover:text-brand-ink'
-                }`}
-              >
-                {on && (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M5 12l5 5L20 7" />
-                  </svg>
-                )}
-                {size}
-              </button>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => setVariants((vs) => [...vs, emptyVariant()])}
-            className="flex min-h-10 items-center justify-center rounded-full border border-dashed border-line px-4 text-sm text-muted transition hover:border-brand hover:text-brand-ink"
-          >
-            + Other size
-          </button>
-        </div>
-        {variants.length > 0 && (
-          <div className="mt-5 flex items-center gap-2 border-t border-line pt-4 text-xs font-medium uppercase tracking-wide text-muted">
-            <span className="flex-1">Size</span>
-            <span className="w-24 text-center">Stock</span>
-            <span className="w-9" />
-          </div>
-        )}
-        <div className="mt-2 space-y-2">
-          {variants.map((v, i) => (
-            <div key={v.id ?? `new-${i}`} className="flex items-center gap-2">
-              {v.fixed ? (
-                <span className="flex-1 px-3 py-2 text-sm font-medium">{v.size}</span>
-              ) : (
-                <input className="input flex-1" placeholder="e.g. 28, 7.5, 2–3 yrs" aria-label="Size" value={v.size} maxLength={30} autoFocus={!v.id && !v.size} onChange={(e) => updateVariant(i, { size: e.target.value })} />
-              )}
-              <input type="number" min={0} className="input w-24" aria-label="Stock" value={v.stock} onChange={(e) => updateVariant(i, { stock: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} />
-              <button type="button" className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700 disabled:opacity-30" aria-label={`Remove size ${v.size}`} onClick={() => setVariants((vs) => vs.filter((_, j) => j !== i))}>✕</button>
-            </div>
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-xl border border-line bg-subtle p-1" role="group" aria-label="Item type">
+          {[
+            { value: true, label: 'Clothing' },
+            { value: false, label: 'Accessories' },
+          ].map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              aria-pressed={sized === o.value}
+              onClick={() => setSized(o.value)}
+              className={`min-h-11 rounded-lg text-sm font-medium transition ${
+                sized === o.value ? 'bg-brand text-white shadow-sm shadow-brand/20' : 'text-muted hover:text-ink'
+              }`}
+            >
+              {o.label}
+            </button>
           ))}
         </div>
+
+        {!sized ? (
+          <div className="mt-4">
+            <p className="text-sm text-muted">Bags, jewelry and other items without sizes. Shoppers won't see a size picker.</p>
+            <div className="mt-3 flex items-center gap-3">
+              <span className="text-sm font-medium">How many do you have?</span>
+              <CountStepper value={plainStock} onChange={setPlainStock} label="stock" />
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="mt-4 text-sm text-muted">Tap the sizes you have, then set how many of each.</p>
+            <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Common sizes">
+              {PRESET_SIZES.map((size) => {
+                const on = hasSize(size)
+                return (
+                  <button
+                    key={size}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => togglePreset(size)}
+                    className={`flex min-h-10 min-w-12 items-center justify-center gap-1 rounded-full border px-4 text-sm font-medium transition active:scale-95 ${
+                      on ? 'border-brand bg-brand text-white' : 'border-line bg-surface hover:border-brand hover:text-brand-ink'
+                    }`}
+                  >
+                    {on && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <path d="M5 12l5 5L20 7" />
+                      </svg>
+                    )}
+                    {size}
+                  </button>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => setVariants((vs) => [...vs, emptyVariant()])}
+                className="flex min-h-10 items-center justify-center rounded-full border border-dashed border-line px-4 text-sm text-muted transition hover:border-brand hover:text-brand-ink"
+              >
+                + Other size
+              </button>
+            </div>
+            {variants.length > 0 && (
+              <div className="mt-5 flex items-center gap-2 border-t border-line pt-4 text-xs font-medium uppercase tracking-wide text-muted">
+                <span className="flex-1">Size</span>
+                <span className="w-[7.75rem] text-center">Stock</span>
+                <span className="w-9" />
+              </div>
+            )}
+            <div className="mt-2 space-y-2">
+              {variants.map((v, i) => (
+                <div key={v.id ?? `new-${i}`} className="flex items-center gap-2">
+                  {v.fixed ? (
+                    <span className="flex-1 px-3 py-2 text-sm font-medium">{v.size}</span>
+                  ) : (
+                    <input className="input flex-1" placeholder="e.g. 28, 7.5, 2–3 yrs" aria-label="Size" value={v.size} maxLength={30} autoFocus={!v.id && !v.size} onChange={(e) => updateVariant(i, { size: e.target.value })} />
+                  )}
+                  <CountStepper value={v.stock} onChange={(stock) => updateVariant(i, { stock })} label={v.size ? `size ${v.size}` : 'this size'} />
+                  <button type="button" className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700 disabled:opacity-30" aria-label={`Remove size ${v.size}`} onClick={() => setVariants((vs) => vs.filter((_, j) => j !== i))}>✕</button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="rounded-2xl border border-line bg-surface p-5">

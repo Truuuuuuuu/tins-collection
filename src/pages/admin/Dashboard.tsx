@@ -7,7 +7,7 @@ import { errorMessage, formatPrice } from '../../lib/format'
 import { imageUrl } from '../../lib/images'
 import { deleteProduct, setSoldOut, updateStock } from '../../lib/products'
 import type { Product } from '../../lib/types'
-import { CONDITION_LABEL, isSoldOut, totalStock } from '../../lib/types'
+import { CONDITION_LABEL, isSoldOut, sizeLabel, totalStock } from '../../lib/types'
 import { useProducts } from '../../lib/useProducts'
 
 export default function Dashboard() {
@@ -95,7 +95,7 @@ export default function Dashboard() {
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {p.product_variants.map((v) => (
-                      <StockStepper key={v.id} size={v.size} stock={v.stock} onCommit={(n) => changeStock(p, v.id, n)} />
+                      <StockStepper key={v.id} size={sizeLabel(v.size) ?? 'Stock'} stock={v.stock} onCommit={(n) => changeStock(p, v.id, n)} />
                     ))}
                   </div>
                 </div>

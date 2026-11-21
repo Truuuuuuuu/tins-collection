@@ -1,9 +1,14 @@
 import { formatPrice, SHOP_NAME } from './format'
 import type { CartLine } from '../store/cart'
+import { sizeLabel } from './types'
 
 export function buildOrderMessage(lines: CartLine[]): string {
   const items = lines.map(
-    (l, i) => `${i + 1}. ${l.name} (${l.size}${l.condition === 'preloved' ? ', pre-loved' : ''}) × ${l.qty} — ${formatPrice(l.price * l.qty)}`,
+    (l, i) => {
+      const details = [sizeLabel(l.size), l.condition === 'preloved' ? 'pre-loved' : null].filter(Boolean)
+      const suffix = details.length ? ` (${details.join(', ')})` : ''
+      return `${i + 1}. ${l.name}${suffix} × ${l.qty} — ${formatPrice(l.price * l.qty)}`
+    },
   )
   const total = lines.reduce((sum, l) => sum + l.price * l.qty, 0)
   return [`Hi ${SHOP_NAME}! I'd like to order:`, ...items, '', `Total: ${formatPrice(total)}`].join('\n')

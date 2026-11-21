@@ -5,6 +5,21 @@ export const CONDITION_LABEL: Record<Condition, string> = {
   preloved: 'Pre-loved',
 }
 
+/**
+ * Items without sizes (bags, jewelry…) still keep one stock row, stored under this name.
+ * Shoppers never see it: there's no size picker, and carts and orders leave the size out.
+ */
+export const NO_SIZE = 'One size'
+
+/** The size to show customers, or null for items without sizes. */
+export function sizeLabel(size: string): string | null {
+  return size === NO_SIZE ? null : size
+}
+
+export function hasSizes(variants: Pick<Variant, 'size'>[]): boolean {
+  return !(variants.length === 1 && variants[0].size === NO_SIZE)
+}
+
 export interface Variant {
   id: string
   product_id: string
