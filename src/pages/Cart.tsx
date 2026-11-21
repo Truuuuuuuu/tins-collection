@@ -15,7 +15,9 @@ export default function Cart() {
   const [products, setProducts] = useState<Product[] | null>(null)
   const [notices, setNotices] = useState<string[]>([])
   const [toast, setToast] = useState<string | null>(null)
-  const [fallbackText, setFallbackText] = useState<string | null>(null)
+  // The order message, and whether it reached the clipboard. Shown in a step-by-step dialog,
+  // because Messenger can't pre-fill text: the customer has to paste it themselves.
+  const [handoff, setHandoff] = useState<{ message: string; copied: boolean } | null>(null)
 
   // Check the saved cart against live stock whenever the page opens.
   useEffect(() => {
@@ -32,16 +34,23 @@ export default function Cart() {
 
   const order = async () => {
     const message = buildOrderMessage(lines)
-    const copied = await copyToClipboard(message)
-    if (copied) {
-      setToast('Order copied! Paste it in Messenger.')
-      // Some browsers (mostly Safari) block pop-ups after an async step; fall back to a tap-to-open link.
-      const win = window.open(messengerUrl(), '_blank')
-      if (!win) window.location.href = messengerUrl()
-    } else {
-      setFallbackText(message)
-    }
+    setHandoff({ message, copied: await copyToClipboard(message) })
   }
+
+  const copyAgain = async () => {
+    if (!handoff) return
+    const copied = await copyToClipboard(handoff.message)
+    setHandoff({ ...handoff, copied })
+    setToast(copied ? 'Order copied again' : "Couldn't copy. Select the text and copy it instead.")
+  }
+
+  // Close the dialog with Escape.
+  useEffect(() => {
+    if (!handoff) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setHandoff(null)
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [handoff])
 
   if (lines.length === 0)
     return (
@@ -97,8 +106,8 @@ export default function Cart() {
 
       <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
         <p className="text-sm text-muted">
-          We take orders through Facebook Messenger. Tapping the button copies your order and opens our page. Just
-          <strong className="text-ink"> paste and send</strong>.
+          We take orders through Facebook Messenger. Tapping the button copies your order, then you
+          <strong className="text-ink"> paste it in our chat and send</strong>.
         </p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
           <button className="btn-accent flex-1 py-3" onClick={order}>
@@ -111,15 +120,57 @@ export default function Cart() {
         </div>
       </div>
 
-      {fallbackText && (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-2xl bg-surface p-5">
-            <h2 className="font-display text-xl">Copy your order</h2>
-            <p className="mt-1 text-sm text-muted">Your browser blocked automatic copying. Select the text below, copy it, then open Messenger.</p>
-            <textarea readOnly value={fallbackText} rows={8} className="input mt-3 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-            <div className="mt-4 flex gap-3">
-              <a href={messengerUrl()} target="_blank" rel="noopener noreferrer" className="btn-accent flex-1">Open Messenger</a>
-              <button className="btn-ghost" onClick={() => setFallbackText(null)}>Close</button>
+      {handoff && (
+        <div
+          className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onClick={(e) => e.target === e.currentTarget && setHandoff(null)}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-surface p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="handoff-title">
+            {handoff.copied ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-ink" aria-hidden>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                  </span>
+                  <h2 id="handoff-title" className="font-display text-xl">Your order is copied</h2>
+                </div>
+                <ol className="mt-4 space-y-2.5 text-sm">
+                  {[
+                    <>Tap <strong>Open Messenger</strong> below.</>,
+                    <>In the chat, <strong>long-press the message box</strong> and tap <strong>Paste</strong>.</>,
+                    <>Tap <strong>Send</strong>. We'll reply to confirm your order.</>,
+                  ].map((step, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-subtle text-xs font-semibold">{i + 1}</span>
+                      <span className="pt-0.5 text-muted [&_strong]:font-medium [&_strong]:text-ink">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+                <details className="mt-4 rounded-lg border border-line text-sm">
+                  <summary className="cursor-pointer px-3 py-2 text-muted">See what you'll paste</summary>
+                  <pre className="whitespace-pre-wrap border-t border-line px-3 py-2 font-sans text-xs leading-relaxed">{handoff.message}</pre>
+                </details>
+              </>
+            ) : (
+              <>
+                <h2 id="handoff-title" className="font-display text-xl">Copy your order</h2>
+                <p className="mt-1 text-sm text-muted">
+                  Your browser didn't let us copy it automatically. Select all the text below and copy it, then open
+                  Messenger and paste it in the chat.
+                </p>
+                <textarea readOnly value={handoff.message} rows={8} className="input mt-3 font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+              </>
+            )}
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <a href={messengerUrl()} target="_blank" rel="noopener noreferrer" className="btn-accent flex-1 py-3">
+                Open Messenger
+              </a>
+              {handoff.copied && (
+                <button className="btn-ghost" onClick={copyAgain}>Copy again</button>
+              )}
+              <button className="btn-ghost" onClick={() => setHandoff(null)}>Close</button>
             </div>
           </div>
         </div>
