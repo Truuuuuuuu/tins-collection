@@ -3,7 +3,8 @@ import FilterMenu from "../components/FilterMenu";
 import FloatingSearch from "../components/FloatingSearch";
 import ProductCard from "../components/ProductCard";
 import type { Condition } from "../lib/types";
-import { CONDITION_LABEL, isSoldOut } from "../lib/types";
+import type { ItemType } from "../lib/types";
+import { CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType } from "../lib/types";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useProducts } from "../lib/useProducts";
 
@@ -11,6 +12,7 @@ export default function Catalog() {
   const { products, loading, error } = useProducts();
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
+  const [types, setTypes] = useState<ItemType[]>([]);
   const [hideSoldOut, setHideSoldOut] = useState(false);
   const [condition, setCondition] = useState<Condition | "all">("all");
   const [page, setPage] = useState(1);
@@ -30,6 +32,7 @@ export default function Catalog() {
     const q = query.trim().toLowerCase();
     return (
       products
+        .filter((p) => types.length === 0 || types.includes(itemType(p)))
         .filter(
           (p) => categories.length === 0 || categories.includes(p.category),
         )
@@ -44,10 +47,10 @@ export default function Catalog() {
         // Available items first, sold-out ones sink to the bottom.
         .sort((a, b) => Number(isSoldOut(a)) - Number(isSoldOut(b)))
     );
-  }, [products, query, categories, condition, hideSoldOut]);
+  }, [products, query, types, categories, condition, hideSoldOut]);
 
   // Start over from page 1 whenever the filters change.
-  useEffect(() => setPage(1), [query, categories, condition, hideSoldOut]);
+  useEffect(() => setPage(1), [query, types, categories, condition, hideSoldOut]);
 
   const pageCount = Math.max(1, Math.ceil(visible.length / perPage));
   const currentPage = Math.min(page, pageCount);
@@ -93,6 +96,8 @@ export default function Catalog() {
             aria-label="Search items"
           />
           <FilterMenu
+            types={types}
+            onTypesChange={setTypes}
             categories={allCategories}
             selected={categories}
             onChange={setCategories}
@@ -122,16 +127,23 @@ export default function Catalog() {
         </div>
       </div>
 
-      {(categories.length > 0 || hideSoldOut) && (
+      {(types.length > 0 || categories.length > 0 || hideSoldOut) && (
         <div className="-mt-3 mb-6 flex flex-wrap items-center gap-2">
           {[
+            ...types.map((t) => ({
+              key: `type-${t}`,
+              label: ITEM_TYPE_LABEL[t],
+              remove: () => setTypes((ts) => ts.filter((x) => x !== t)),
+            })),
             ...categories.map((c) => ({
+              key: `category-${c}`,
               label: c,
               remove: () => setCategories((cs) => cs.filter((x) => x !== c)),
             })),
             ...(hideSoldOut
               ? [
                   {
+                    key: "sold-out",
                     label: "Hide sold out",
                     remove: () => setHideSoldOut(false),
                   },
@@ -139,7 +151,7 @@ export default function Catalog() {
               : []),
           ].map((f) => (
             <button
-              key={f.label}
+              key={f.key}
               onClick={f.remove}
               className="flex items-center gap-1.5 rounded-full bg-brand-soft py-1 pl-3 pr-2 text-sm text-brand-ink hover:bg-brand/15"
               aria-label={`Remove ${f.label} filter`}
@@ -161,6 +173,7 @@ export default function Catalog() {
           ))}
           <button
             onClick={() => {
+              setTypes([]);
               setCategories([]);
               setHideSoldOut(false);
             }}

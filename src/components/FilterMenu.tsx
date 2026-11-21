@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ItemType } from '../lib/types'
+import { ITEM_TYPE_LABEL } from '../lib/types'
 
 interface Props {
+  types: ItemType[]
+  onTypesChange: (types: ItemType[]) => void
   categories: string[]
   selected: string[]
   onChange: (selected: string[]) => void
@@ -8,8 +12,8 @@ interface Props {
   onHideSoldOutChange: (hide: boolean) => void
 }
 
-/** Filter-icon button that opens a checklist of categories (several can be picked) plus availability. */
-export default function FilterMenu({ categories, selected, onChange, hideSoldOut, onHideSoldOutChange }: Props) {
+/** Filter-icon button that opens checklists of item types and categories (several can be picked) plus availability. */
+export default function FilterMenu({ types, onTypesChange, categories, selected, onChange, hideSoldOut, onHideSoldOutChange }: Props) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
 
@@ -26,7 +30,8 @@ export default function FilterMenu({ categories, selected, onChange, hideSoldOut
     }
   }, [open])
 
-  const activeCount = selected.length + Number(hideSoldOut)
+  const activeCount = types.length + selected.length + Number(hideSoldOut)
+  const toggleType = (t: ItemType) => onTypesChange(types.includes(t) ? types.filter((x) => x !== t) : [...types, t])
   const toggle = (c: string) => onChange(selected.includes(c) ? selected.filter((s) => s !== c) : [...selected, c])
 
   return (
@@ -54,7 +59,19 @@ export default function FilterMenu({ categories, selected, onChange, hideSoldOut
 
       {open && (
         <div className="absolute right-0 z-30 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-surface p-2 shadow-lg sm:left-0 sm:right-auto">
-          <div className="flex items-center justify-between px-2 py-1.5">
+          <span className="block px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted">Type</span>
+          <ul>
+            {(Object.keys(ITEM_TYPE_LABEL) as ItemType[]).map((t) => (
+              <li key={t}>
+                <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 text-sm hover:bg-subtle">
+                  <input type="checkbox" className="h-4 w-4 accent-brand" checked={types.includes(t)} onChange={() => toggleType(t)} />
+                  {ITEM_TYPE_LABEL[t]}
+                </label>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-2 flex items-center justify-between border-t border-line px-2 pb-1.5 pt-3.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">Categories</span>
             {selected.length > 0 && (
               <button type="button" className="text-xs font-medium text-brand-ink hover:underline" onClick={() => onChange([])}>

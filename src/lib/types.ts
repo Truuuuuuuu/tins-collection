@@ -20,6 +20,18 @@ export function hasSizes(variants: Pick<Variant, 'size'>[]): boolean {
   return !(variants.length === 1 && variants[0].size === NO_SIZE)
 }
 
+export type ItemType = 'clothing' | 'accessories'
+
+export const ITEM_TYPE_LABEL: Record<ItemType, string> = {
+  accessories: 'Accessories',
+  clothing: 'Clothing',
+}
+
+/** Accessories are the items saved without sizes. */
+export function itemType(p: Pick<Product, 'product_variants'>): ItemType {
+  return hasSizes(p.product_variants) ? 'clothing' : 'accessories'
+}
+
 export interface Variant {
   id: string
   product_id: string
