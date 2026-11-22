@@ -72,6 +72,16 @@ create policy "variants: admin write" on public.product_variants for all
 drop policy if exists "admins: self read" on public.admins;
 create policy "admins: self read" on public.admins for select using (user_id = auth.uid());
 
+-- ---------- Table access ----------
+-- Newer Supabase projects don't give the website any access to new tables by default
+-- ("permission denied for table ..."). These grants open the door; the RLS policies above
+-- still decide who can actually read or change each row.
+grant usage on schema public to anon, authenticated;
+grant select on public.products, public.product_variants to anon, authenticated;
+grant insert, update, delete on public.products, public.product_variants to authenticated;
+grant select on public.admins to authenticated;
+grant execute on function public.is_admin() to anon, authenticated;
+
 -- ---------- Storage: product images ----------
 insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)

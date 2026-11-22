@@ -19,7 +19,7 @@ export default function ProductCard({ product }: { product: Product }) {
             src={imageUrl(cover)}
             alt={product.name}
             loading="lazy"
-            className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] ${soldOut ? 'opacity-60 grayscale-[40%]' : ''}`}
+            className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.03] ${soldOut ? 'opacity-60 grayscale-[70%]' : ''}`}
           />
         ) : (
           <div className="flex h-full items-center justify-center font-display text-4xl text-muted/30">T</div>
@@ -31,8 +31,8 @@ export default function ProductCard({ product }: { product: Product }) {
         )}
       </div>
       <div className="mt-3">
-        <h3 className="truncate text-sm font-medium">{product.name}</h3>
-        <p className="mt-0.5 text-xl font-semibold leading-snug text-brand-ink">{formatPrice(product.price)}</p>
+        <h3 className={`truncate text-sm font-medium ${soldOut ? 'text-muted' : ''}`}>{product.name}</h3>
+        <p className={`mt-0.5 text-xl font-semibold leading-snug ${soldOut ? 'text-muted/70' : 'text-brand-ink'}`}>{formatPrice(product.price)}</p>
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2">
         {availableSizes.length > 0 ? (

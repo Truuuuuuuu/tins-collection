@@ -133,7 +133,7 @@ export default function Catalog() {
               aria-pressed={c === condition}
               className={`min-h-9 rounded-full px-3 text-sm transition ${
                 c === condition
-                  ? "bg-surface font-medium text-ink shadow-sm"
+                  ? "bg-brand font-medium text-white shadow-sm shadow-brand/20"
                   : "text-muted hover:text-ink"
               }`}
             >
