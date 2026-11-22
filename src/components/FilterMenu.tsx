@@ -41,16 +41,29 @@ export default function FilterMenu({ types, onTypesChange, categories, selected,
   const trigger = useRef<HTMLButtonElement>(null)
   const sheet = useRef<HTMLDivElement>(null)
   const drag = useRef<{ startY: number; dy: number } | null>(null)
+  // The pending "finish closing" timer, so a quick reopen or a second close can't trip over it.
+  const closeTimer = useRef<number | undefined>(undefined)
+
+  const show = () => {
+    window.clearTimeout(closeTimer.current)
+    closeTimer.current = undefined
+    setClosing(false)
+    setOpen(true)
+  }
 
   const close = () => {
     if (!asSheet) return setOpen(false)
+    if (closeTimer.current !== undefined) return // already sliding away
     setClosing(true)
-    window.setTimeout(() => {
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = undefined
       setOpen(false)
       setClosing(false)
       trigger.current?.focus()
     }, CLOSE_MS)
   }
+
+  useEffect(() => () => window.clearTimeout(closeTimer.current), [])
 
   // Close on Escape; the dropdown also closes on a tap outside it.
   useEffect(() => {
@@ -213,9 +226,9 @@ export default function FilterMenu({ types, onTypesChange, categories, selected,
       <button
         ref={trigger}
         type="button"
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => (open && !closing ? close() : show())}
         aria-expanded={open}
-        aria-haspopup="true"
+        aria-haspopup={asSheet ? 'dialog' : 'true'}
         aria-label={activeCount ? `Filters, ${activeCount} active` : 'Filters'}
         className={`relative flex h-10 items-center gap-2 rounded-lg border px-3 text-sm transition ${
           activeCount || open ? 'border-brand text-brand-ink' : 'border-line bg-surface text-ink hover:border-brand'

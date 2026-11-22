@@ -106,3 +106,9 @@ export async function setSoldOut(productId: string, soldOut: boolean): Promise<v
   const { error } = await supabase.from('products').update({ is_sold_out: soldOut }).eq('id', productId)
   if (error) throw error
 }
+
+/** Rewrites one item's category, used to tidy up mismatched spellings ("pAnts" → "Pants"). */
+export async function updateCategory(productId: string, category: string): Promise<void> {
+  const { error } = await supabase.from('products').update({ category }).eq('id', productId)
+  if (error) throw error
+}

@@ -7,8 +7,8 @@ import StockStepper from '../../components/StockStepper'
 import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
 import { imageUrl } from '../../lib/images'
-import { deleteProduct, setSoldOut, updateStock } from '../../lib/products'
-import { categoryKey, categoryOptions } from '../../lib/categories'
+import { deleteProduct, setSoldOut, updateCategory, updateStock } from '../../lib/products'
+import { categoryKey, categoryOptions, matchCategory } from '../../lib/categories'
 import type { Condition, ItemType, Product, StockStatus } from '../../lib/types'
 import { CONDITION_LABEL, ITEM_TYPE_LABEL, STOCK_STATUS_LABEL, isSoldOut, itemType, sizeLabel, stockStatus, totalStock } from '../../lib/types'
 import { useMediaQuery } from '../../lib/useMediaQuery'
@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [categories, setCategories] = useState<string[]>([])
   const [conditions, setConditions] = useState<Condition[]>([])
   const [stock, setStock] = useState<StockStatus[]>([])
+  const [tidying, setTidying] = useState(false)
 
   const patch = (id: string, fn: (p: Product) => Product) =>
     setProducts((ps) => ps.map((p) => (p.id === id ? fn(p) : p)))
@@ -79,6 +80,25 @@ export default function Dashboard() {
     ...categories.map((c) => ({ key: `category-${c}`, label: allCategories.find((o) => o.key === c)?.label ?? c, remove: () => setCategories((xs) => xs.filter((x) => x !== c)) })),
     ...stock.map((s) => ({ key: `stock-${s}`, label: STOCK_STATUS_LABEL[s], remove: () => setStock((xs) => xs.filter((x) => x !== s)) })),
   ]
+  // Items saved with a different spelling of an existing category ("pAnts" when "Pants" exists).
+  const mismatched = products.filter((p) => p.category && matchCategory(p.category, allCategories) !== p.category)
+  const tidyCategories = async () => {
+    setTidying(true)
+    try {
+      for (const p of mismatched) {
+        const category = matchCategory(p.category, allCategories)
+        await updateCategory(p.id, category)
+        patch(p.id, (x) => ({ ...x, category }))
+      }
+      setToast(`Tidied ${plural(mismatched.length, 'category name')}`)
+    } catch (e) {
+      setToast(errorMessage(e, 'Could not tidy categories'))
+      reload()
+    } finally {
+      setTidying(false)
+    }
+  }
+
   const clearFilters = () => {
     setTypes([])
     setCategories([])
@@ -177,6 +197,18 @@ export default function Dashboard() {
         </div>
       )}
 
+      {!loading && mismatched.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p>
+            {plural(mismatched.length, 'item')} {mismatched.length === 1 ? 'uses' : 'use'} a different spelling of an existing category
+            {' '}(e.g. “{mismatched[0].category}” → “{matchCategory(mismatched[0].category, allCategories)}”).
+          </p>
+          <button className="btn-ghost px-4 py-1.5" onClick={tidyCategories} disabled={tidying}>
+            {tidying ? 'Tidying…' : 'Tidy up'}
+          </button>
+        </div>
+      )}
+
       {error && <p className="mt-4 rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {loading ? (
         <AdminListSkeleton />
@@ -192,11 +224,11 @@ export default function Dashboard() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate font-medium">{p.name}</h2>
+                    <h3 className="truncate font-medium">{p.name}</h3>
                     {isSoldOut(p) && <SoldOutBadge />}
                   </div>
                   <p className="text-sm text-muted">
-                    {formatPrice(p.price)} · {CONDITION_LABEL[p.condition]}{p.category && ` · ${p.category}`} · {totalStock(p)} in stock
+                    {formatPrice(p.price)} · {CONDITION_LABEL[p.condition]}{p.category && ` · ${matchCategory(p.category, allCategories)}`} · {totalStock(p)} in stock
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {p.product_variants.map((v) => (

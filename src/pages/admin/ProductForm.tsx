@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { errorMessage } from '../../lib/format'
@@ -57,10 +57,13 @@ export default function ProductForm() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Loaded once; saving waits for it so a quick save still reuses the existing spelling.
+  const categoriesLoad = useRef<Promise<CategoryOption[]> | null>(null)
   useEffect(() => {
-    fetchProducts()
-      .then((ps) => setKnownCategories(categoryOptions(ps.map((p) => p.category))))
-      .catch(() => undefined)
+    categoriesLoad.current = fetchProducts()
+      .then((ps) => categoryOptions(ps.map((p) => p.category)))
+      .catch(() => [])
+    categoriesLoad.current.then(setKnownCategories)
   }, [])
 
   useEffect(() => {
@@ -142,6 +145,7 @@ export default function ProductForm() {
     if (problem) return setError(problem)
     setError(null)
     setSaving(true)
+    const known = (await categoriesLoad.current) ?? knownCategories
 
     const uploaded: string[] = []
     try {
@@ -159,7 +163,7 @@ export default function ProductForm() {
         name,
         description,
         price: Number(price),
-        category: matchCategory(category, knownCategories),
+        category: matchCategory(category, known),
         condition,
         is_sold_out: soldOut,
         image_paths: paths,
