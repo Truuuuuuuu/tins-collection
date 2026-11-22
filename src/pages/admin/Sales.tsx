@@ -7,6 +7,7 @@ import { CategoryBars, RevenueChart } from '../../components/SalesCharts'
 import { AdminListSkeleton, Bone } from '../../components/Skeletons'
 import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
+import { imageUrl } from '../../lib/images'
 import { fetchSales, parseOrderCode, recordSale, saleTotal, startOfMonth, undoSale } from '../../lib/sales'
 import type { Product, Sale } from '../../lib/types'
 import { sizeLabel, sizePrice } from '../../lib/types'
@@ -301,7 +302,6 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
   const [code, setCode] = useState('')
   const [lines, setLines] = useState<Line[]>([])
   const [notice, setNotice] = useState<string | null>(null)
-  const [pick, setPick] = useState('')
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -341,17 +341,6 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
         : `Filled in ${plural(parsed.lines.length, 'item')} from the order.`,
     )
   }
-
-  // Every size with stock, for adding items by hand.
-  const options = products.flatMap((p) =>
-    p.product_variants
-      .filter((v) => v.stock > 0)
-      .map((v) => ({
-        value: v.id,
-        product: p,
-        label: `${p.name}${sizeLabel(v.size) ? ` — ${v.size}` : ''} · ${formatPrice(sizePrice(p, v))} (${v.stock} left)`,
-      })),
-  )
 
   const problems = lines
     .map((l) => {
@@ -397,26 +386,11 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
       {notice && <p className="mt-1.5 text-xs text-muted">{notice}</p>}
 
       <label className="label mt-4" htmlFor="add-item">Or add an item</label>
-      <div className="flex gap-2">
-        <select id="add-item" className="input min-w-0 flex-1" value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Choose an item…</option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="btn-ghost shrink-0"
-          disabled={!pick}
-          onClick={() => {
-            const o = options.find((x) => x.value === pick)
-            if (o) addLine(o.product, o.value, 1)
-            setPick('')
-          }}
-        >
-          Add
-        </button>
-      </div>
+      <ItemPicker
+        products={products}
+        inSale={Object.fromEntries(lines.map((l) => [l.variantId, l.qty]))}
+        onAdd={(product, variantId) => addLine(product, variantId, 1)}
+      />
 
       {lines.length > 0 && (
         <ul className="mt-5 divide-y divide-line border-y border-line">
@@ -466,7 +440,8 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
       )}
       {error && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
+      {/* Stays on screen at the bottom while scrolling a long sale, so Save is always in reach. */}
+      <div className="sticky bottom-0 z-10 -mx-4 mt-5 flex flex-wrap items-center gap-3 rounded-b-2xl border-t border-line bg-surface/95 px-4 py-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:-mx-5 sm:px-5">
         <p className="mr-auto text-lg">
           Total <span className="font-semibold tabular-nums">{formatPrice(total)}</span>
         </p>
@@ -503,5 +478,114 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
         </ConfirmSheet>
       )}
     </section>
+  )
+}
+
+/**
+ * Search box for adding items to a sale by hand. Type part of a name or category; each matching item
+ * shows its sizes in stock as buttons, and tapping one adds it. Stays open so several can be added in a row.
+ */
+function ItemPicker({
+  products,
+  inSale,
+  onAdd,
+}: {
+  products: Product[]
+  inSale: Record<string, number>
+  onAdd: (product: Product, variantId: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const inStock = useMemo(() => products.filter((p) => p.product_variants.some((v) => v.stock > 0)), [products])
+  const results = q
+    ? inStock.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.product_variants.some((v) => v.size.toLowerCase() === q))
+    : []
+  const shown = results.slice(0, 30)
+
+  return (
+    <div>
+      <div className="relative">
+        <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+        <input
+          id="add-item"
+          type="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          className="input pl-9 pr-10 [&::-webkit-search-cancel-button]:hidden"
+          placeholder={`Search ${inStock.length} items in stock by name or category`}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
+          aria-controls="add-item-results"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-muted hover:bg-subtle hover:text-ink"
+            aria-label="Clear search"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {q && (
+        <div id="add-item-results" aria-live="polite" className="mt-2 max-h-80 overflow-y-auto overscroll-contain rounded-xl border border-line">
+          {results.length === 0 ? (
+            <p className="px-3 py-4 text-center text-sm text-muted">No items in stock match “{query.trim()}”.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {shown.map((p) => (
+                <li key={p.id} className="flex gap-3 p-3">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-subtle">
+                    {p.image_paths[0] && <img src={imageUrl(p.image_paths[0])} alt="" loading="lazy" className="h-full w-full object-cover" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{p.name}</p>
+                    {p.category && <p className="truncate text-xs text-muted">{p.category}</p>}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {p.product_variants
+                        .filter((v) => v.stock > 0)
+                        .map((v) => {
+                          const added = inSale[v.id] ?? 0
+                          const full = added >= v.stock
+                          const size = sizeLabel(v.size)
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              disabled={full}
+                              onClick={() => onAdd(p, v.id)}
+                              aria-label={`Add ${p.name}${size ? `, size ${v.size}` : ''}, ${formatPrice(sizePrice(p, v))}, ${v.stock} left${added ? `, ${added} in this sale` : ''}`}
+                              className={`flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${
+                                added ? 'border-brand bg-brand-soft text-brand-ink' : 'border-line hover:border-brand'
+                              }`}
+                            >
+                              <span className="font-medium">{size ? v.size : 'Add'}</span>
+                              <span className="tabular-nums text-muted">{formatPrice(sizePrice(p, v))}</span>
+                              <span className="tabular-nums text-muted">· {full ? 'all added' : `${v.stock - added} left`}</span>
+                            </button>
+                          )
+                        })}
+                    </div>
+                  </div>
+                </li>
+              ))}
+              {results.length > shown.length && (
+                <li className="px-3 py-2.5 text-center text-xs text-muted">
+                  Showing {shown.length} of {results.length}. Type more to narrow it down.
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
