@@ -187,6 +187,14 @@ export default function ProductDetail() {
                     />
                   </>
                 )}
+                {variant?.measurements && (
+                  <p className="mt-3 rounded-lg bg-subtle px-3 py-2 text-sm">
+                    <span className="font-medium">
+                      {sizeLabel(variant.size) ? `Size ${variant.size} measurements: ` : "Measurements: "}
+                    </span>
+                    <span className="text-muted">{variant.measurements}</span>
+                  </p>
+                )}
                 {variant && (
                   <p className="mt-2 text-xs text-muted">
                     {variant.stock <= 3

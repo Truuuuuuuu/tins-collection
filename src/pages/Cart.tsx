@@ -42,9 +42,30 @@ export default function Cart() {
     products?.flatMap((p) => p.product_variants).find((v) => v.id === variantId)
       ?.stock ?? 1;
 
+  const [checking, setChecking] = useState(false);
+
+  // Re-check stock right before ordering: something may have sold since the page opened.
+  // The copy starts straight away, because iPhones only allow copying right after a tap.
   const order = async () => {
     const message = buildOrderMessage(lines);
-    setHandoff({ message, copied: await copyToClipboard(message) });
+    const copying = copyToClipboard(message);
+    setChecking(true);
+    try {
+      const ps = await fetchProducts();
+      setProducts(ps);
+      const changes = reconcile(ps);
+      if (changes.length > 0) {
+        setNotices(changes);
+        setToast("Your cart changed. Please check it before ordering.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+    } catch {
+      // Offline or the shop is unreachable: still let them send the order; the shop confirms stock in chat.
+    } finally {
+      setChecking(false);
+    }
+    setHandoff({ message, copied: await copying });
   };
 
   const copyAgain = async () => {
@@ -160,7 +181,7 @@ export default function Cart() {
           <strong className="text-ink"> paste it in our chat and send</strong>.
         </p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <button className="btn-accent flex-1 py-3" onClick={order}>
+          <button className="btn-accent flex-1 py-3" onClick={order} disabled={checking}>
             <svg
               width="18"
               height="18"

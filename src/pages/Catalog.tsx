@@ -3,6 +3,8 @@ import EmptyRackIllustration from "../components/EmptyRackIllustration";
 import FilterMenu from "../components/FilterMenu";
 import FloatingSearch from "../components/FloatingSearch";
 import ProductCard from "../components/ProductCard";
+import type { SortOrder } from "../lib/sort";
+import SortMenu from "../components/SortMenu";
 import { ProductGridSkeleton } from "../components/Skeletons";
 import type { Condition } from "../lib/types";
 import type { ItemType } from "../lib/types";
@@ -28,6 +30,7 @@ export default function Catalog() {
   const [types, setTypes] = useState<ItemType[]>([]);
   const [hideSoldOut, setHideSoldOut] = useState(false);
   const [condition, setCondition] = useState<Condition | "all">("all");
+  const [sort, setSort] = useState<SortOrder>("newest");
   const [page, setPage] = useState(1);
   const gridTop = useRef<HTMLDivElement>(null);
   // Matches Tailwind's md breakpoint: 10 per page on phones, 20 on larger screens.
@@ -63,13 +66,19 @@ export default function Catalog() {
             categoryKey(p.category).includes(q) ||
             p.description.toLowerCase().includes(q),
         )
-        // Available items first, sold-out ones sink to the bottom.
-        .sort((a, b) => Number(isSoldOut(a)) - Number(isSoldOut(b)))
+        // Available items first, sold-out ones sink to the bottom; then the chosen order.
+        // Products arrive newest first, so "newest" keeps that order.
+        .sort(
+          (a, b) =>
+            Number(isSoldOut(a)) - Number(isSoldOut(b)) ||
+            (sort === "price-asc" ? a.price - b.price : 0) ||
+            (sort === "price-desc" ? b.price - a.price : 0),
+        )
     );
-  }, [products, query, types, categories, condition, hideSoldOut]);
+  }, [products, query, types, categories, condition, hideSoldOut, sort]);
 
   // Start over from page 1 whenever the filters change.
-  useEffect(() => setPage(1), [query, types, categories, condition, hideSoldOut]);
+  useEffect(() => setPage(1), [query, types, categories, condition, hideSoldOut, sort]);
 
   const pageCount = Math.max(1, Math.ceil(visible.length / perPage));
   const currentPage = Math.min(page, pageCount);
@@ -127,6 +136,7 @@ export default function Catalog() {
             onHideSoldOutChange={setHideSoldOut}
             resultCount={visible.length}
           />
+          <SortMenu value={sort} onChange={setSort} />
         </div>
         <div
           className="relative grid shrink-0 grid-cols-3 gap-1 rounded-full border border-line bg-subtle p-1 sm:ml-auto"

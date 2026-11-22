@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import FilterMenu from '../../components/FilterMenu'
 import { AdminListSkeleton, Bone } from '../../components/Skeletons'
@@ -7,7 +8,8 @@ import StockStepper from '../../components/StockStepper'
 import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
 import { imageUrl } from '../../lib/images'
-import { deleteProduct, setSoldOut, updateCategory, updateStock } from '../../lib/products'
+import { purgeExpiredTrash, setSoldOut, TRASH_DAYS, trashProducts, updateCategory, updateStock } from '../../lib/products'
+import { fetchSales, saleTotal, startOfMonth } from '../../lib/sales'
 import { categoryKey, categoryOptions, matchCategory } from '../../lib/categories'
 import type { Condition, ItemType, Product, StockStatus } from '../../lib/types'
 import { CONDITION_LABEL, ITEM_TYPE_LABEL, STOCK_STATUS_LABEL, isSoldOut, itemType, sizeLabel, stockStatus, totalStock } from '../../lib/types'
@@ -15,19 +17,37 @@ import { useMediaQuery } from '../../lib/useMediaQuery'
 import { useProducts } from '../../lib/useProducts'
 import { useAdminSearch } from '../../store/search'
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
 export default function Dashboard() {
   const { products, setProducts, loading, error, reload } = useProducts()
   const { query, setQuery } = useAdminSearch()
   // On large screens the search lives in the header, centered in the top bar.
   const searchInHeader = useMediaQuery('(min-width: 1024px)')
   const [toast, setToast] = useState<string | null>(null)
-  const [confirming, setConfirming] = useState<Product | null>(null)
+  const [busy, setBusy] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [types, setTypes] = useState<ItemType[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [conditions, setConditions] = useState<Condition[]>([])
   const [stock, setStock] = useState<StockStatus[]>([])
   const [tidying, setTidying] = useState(false)
+  // Bulk actions
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [confirmingDelete, setConfirmingDelete] = useState<Product[] | null>(null)
+  const [categoryDialog, setCategoryDialog] = useState(false)
+  const [newCategory, setNewCategory] = useState('')
+  // This month's sales: undefined while loading, null if sales aren't set up in the database yet.
+  const [monthSales, setMonthSales] = useState<{ total: number; pieces: number } | null | undefined>(undefined)
+  const listTop = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    fetchSales(startOfMonth())
+      .then((sales) => setMonthSales({ total: saleTotal(sales), pieces: sales.reduce((n, s) => n + s.qty, 0) }))
+      .catch(() => setMonthSales(null))
+    // Items left in "Recently deleted" past the limit are removed for good (photos included).
+    purgeExpiredTrash().catch(() => undefined)
+  }, [])
 
   const patch = (id: string, fn: (p: Product) => Product) =>
     setProducts((ps) => ps.map((p) => (p.id === id ? fn(p) : p)))
@@ -45,25 +65,15 @@ export default function Dashboard() {
     }
   }
 
-  const changeStock = (p: Product, variantId: string, stock: number) => {
-    const value = Math.max(0, Math.floor(stock || 0))
-    patch(p.id, (x) => ({ ...x, product_variants: x.product_variants.map((v) => (v.id === variantId ? { ...v, stock: value } : v)) }))
-    run(p.id, () => updateStock(variantId, value), 'Stock updated')
+  const changeStock = (p: Product, variantId: string, value: number) => {
+    const n = Math.max(0, Math.floor(value || 0))
+    patch(p.id, (x) => ({ ...x, product_variants: x.product_variants.map((v) => (v.id === variantId ? { ...v, stock: n } : v)) }))
+    run(p.id, () => updateStock(variantId, n), 'Stock updated')
   }
 
   const toggleSoldOut = (p: Product) => {
     patch(p.id, (x) => ({ ...x, is_sold_out: !x.is_sold_out }))
     run(p.id, () => setSoldOut(p.id, !p.is_sold_out), p.is_sold_out ? 'Marked available' : 'Marked sold out')
-  }
-
-  const confirmDelete = async () => {
-    if (!confirming) return
-    const p = confirming
-    setConfirming(null)
-    await run(p.id, async () => {
-      await deleteProduct(p)
-      setProducts((ps) => ps.filter((x) => x.id !== p.id))
-    }, `Deleted ${p.name} and its photos`)
   }
 
   const q = query.trim().toLowerCase()
@@ -74,12 +84,82 @@ export default function Dashboard() {
     .filter((p) => conditions.length === 0 || conditions.includes(p.condition))
     .filter((p) => stock.length === 0 || stock.includes(stockStatus(p)))
     .filter((p) => !q || p.name.toLowerCase().includes(q) || categoryKey(p.category).includes(q))
+  // Only items you can see count as selected, so a bulk action never touches hidden items.
+  const picked = visible.filter((p) => selected.has(p.id))
+  const allPicked = visible.length > 0 && picked.length === visible.length
+
+  const togglePick = (id: string) =>
+    setSelected((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const togglePickAll = () => setSelected(allPicked ? new Set() : new Set(visible.map((p) => p.id)))
+  const clearPicked = () => setSelected(new Set())
+
+  const bulk = async (action: () => Promise<void>, success: string) => {
+    setBusy(true)
+    try {
+      await action()
+      setToast(success)
+      clearPicked()
+    } catch (e) {
+      setToast(errorMessage(e, 'Something went wrong'))
+      reload()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const bulkSoldOut = (soldOut: boolean) => {
+    const ids = picked.map((p) => p.id)
+    bulk(async () => {
+      await setSoldOut(ids, soldOut)
+      setProducts((ps) => ps.map((p) => (ids.includes(p.id) ? { ...p, is_sold_out: soldOut } : p)))
+    }, `${plural(ids.length, 'item')} marked ${soldOut ? 'sold out' : 'available'}`)
+  }
+
+  const saveBulkCategory = () => {
+    const ids = picked.map((p) => p.id)
+    const category = matchCategory(newCategory, allCategories)
+    setCategoryDialog(false)
+    bulk(async () => {
+      await updateCategory(ids, category)
+      setProducts((ps) => ps.map((p) => (ids.includes(p.id) ? { ...p, category } : p)))
+    }, category ? `Moved ${plural(ids.length, 'item')} to “${category}”` : `Removed the category from ${plural(ids.length, 'item')}`)
+  }
+
+  const confirmTrash = () => {
+    if (!confirmingDelete) return
+    const ids = confirmingDelete.map((p) => p.id)
+    setConfirmingDelete(null)
+    bulk(async () => {
+      await trashProducts(ids)
+      setProducts((ps) => ps.filter((p) => !ids.includes(p.id)))
+    }, ids.length === 1 ? 'Moved to Recently deleted' : `Moved ${plural(ids.length, 'item')} to Recently deleted`)
+  }
+
   const activeFilters = [
     ...types.map((t) => ({ key: `type-${t}`, label: ITEM_TYPE_LABEL[t], remove: () => setTypes((xs) => xs.filter((x) => x !== t)) })),
     ...conditions.map((c) => ({ key: `condition-${c}`, label: CONDITION_LABEL[c], remove: () => setConditions((xs) => xs.filter((x) => x !== c)) })),
     ...categories.map((c) => ({ key: `category-${c}`, label: allCategories.find((o) => o.key === c)?.label ?? c, remove: () => setCategories((xs) => xs.filter((x) => x !== c)) })),
     ...stock.map((s) => ({ key: `stock-${s}`, label: STOCK_STATUS_LABEL[s], remove: () => setStock((xs) => xs.filter((x) => x !== s)) })),
   ]
+  const clearFilters = () => {
+    setTypes([])
+    setCategories([])
+    setConditions([])
+    setStock([])
+  }
+  /** Overview shortcut: show only one stock status and jump to the list. */
+  const showOnly = (status: StockStatus) => {
+    clearFilters()
+    setQuery('')
+    setStock([status])
+    listTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   // Items saved with a different spelling of an existing category ("pAnts" when "Pants" exists).
   const mismatched = products.filter((p) => p.category && matchCategory(p.category, allCategories) !== p.category)
   const tidyCategories = async () => {
@@ -99,12 +179,6 @@ export default function Dashboard() {
     }
   }
 
-  const clearFilters = () => {
-    setTypes([])
-    setCategories([])
-    setConditions([])
-    setStock([])
-  }
   const soldOutCount = products.filter(isSoldOut).length
   const available = products.filter((p) => !isSoldOut(p))
   // Only stock that can actually be bought: items marked sold out don't count.
@@ -113,19 +187,24 @@ export default function Dashboard() {
   const inventoryValue = available.reduce((n, p) => n + p.price * totalStock(p), 0)
   // Same "Only N left" threshold shoppers see on product cards.
   const runningLow = available.filter((p) => totalStock(p) <= 3).length
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
   return (
     <>
+
       <section aria-labelledby="overview-title">
         <h1 id="overview-title" className="font-display text-3xl">Overview</h1>
-        {/* Phones: the money card spans the full width, the two counts sit side by side below it. */}
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          <StatCard
+            loading={monthSales === undefined}
+            label="Sales this month"
+            value={monthSales ? formatPrice(Math.round(monthSales.total)) : '—'}
+            note={monthSales ? `${plural(monthSales.pieces, 'piece')} sold · View sales` : 'Not set up yet: see README'}
+            to="/admin/sales"
+          />
           <StatCard
             loading={loading}
             label="Inventory value"
             value={formatPrice(Math.round(inventoryValue))}
-            className="col-span-2 md:col-span-1"
             note={`Across ${plural(products.length, 'item')} listed`}
           />
           <StatCard
@@ -138,21 +217,26 @@ export default function Dashboard() {
                 ? 'Nothing listed yet'
                 : soldOutCount === 0
                   ? 'Everything is available'
-                  : `${Math.round((soldOutCount / products.length) * 100)}% of your items`
+                  : `${Math.round((soldOutCount / products.length) * 100)}% of your items · Show`
             }
+            onClick={soldOutCount > 0 ? () => showOnly('sold-out') : undefined}
           />
           <StatCard
             loading={loading}
             label="Units in stock"
             value={unitsInStock}
-            note={runningLow > 0 ? `${plural(runningLow, 'item')} running low` : 'Ready to sell'}
+            note={runningLow > 0 ? `${plural(runningLow, 'item')} running low · Show` : 'Ready to sell'}
+            onClick={runningLow > 0 ? () => showOnly('low') : undefined}
           />
         </div>
       </section>
 
-      <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
+      <div ref={listTop} className="mt-10 flex scroll-mt-36 flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-2xl">Items</h2>
-        <Link to="/admin/new" className="btn-primary">+ Add item</Link>
+        <div className="flex gap-2">
+          <Link to="/admin/sales?record=1" className="btn-ghost">Record sale</Link>
+          <Link to="/admin/new" className="btn-primary">+ Add item</Link>
+        </div>
       </div>
 
       <div className="mt-6 flex gap-2 sm:max-w-md">
@@ -215,86 +299,198 @@ export default function Dashboard() {
       ) : visible.length === 0 ? (
         <p className="py-16 text-center text-muted">{products.length ? 'No items match your search or filters.' : 'No items yet. Add your first one!'}</p>
       ) : (
-        <ul className="mt-6 space-y-3">
-          {visible.map((p) => (
-            <li key={p.id} className={`rounded-2xl border border-line bg-surface p-4 ${busyId === p.id ? 'opacity-70' : ''}`}>
-              <div className="flex gap-4">
-                <div className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-subtle">
-                  {p.image_paths[0] && <img src={imageUrl(p.image_paths[0])} alt="" className="h-full w-full object-cover" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-medium">{p.name}</h3>
-                    {isSoldOut(p) && <SoldOutBadge />}
+        <>
+          <label className="mt-6 flex w-max cursor-pointer items-center gap-3 px-1 text-sm text-muted">
+            <input type="checkbox" className="h-4 w-4 accent-brand" checked={allPicked} onChange={togglePickAll} />
+            {picked.length > 0 ? `${picked.length} selected` : `Select all ${visible.length}`}
+          </label>
+          {/* Extra room at the bottom so the action bar never covers the last item. */}
+          <ul className={`mt-3 space-y-3 ${picked.length > 0 ? 'pb-36 sm:pb-24' : ''}`}>
+            {visible.map((p) => (
+              <li
+                key={p.id}
+                className={`rounded-2xl border bg-surface p-4 transition ${selected.has(p.id) ? 'border-brand ring-1 ring-brand' : 'border-line'} ${busyId === p.id ? 'opacity-70' : ''}`}
+              >
+                <div className="flex gap-3 sm:gap-4">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-5 w-5 shrink-0 cursor-pointer accent-brand"
+                    checked={selected.has(p.id)}
+                    onChange={() => togglePick(p.id)}
+                    aria-label={`Select ${p.name}`}
+                  />
+                  <div className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-subtle">
+                    {p.image_paths[0] && <img src={imageUrl(p.image_paths[0])} alt="" className="h-full w-full object-cover" />}
                   </div>
-                  <p className="text-sm text-muted">
-                    {formatPrice(p.price)} · {CONDITION_LABEL[p.condition]}{p.category && ` · ${matchCategory(p.category, allCategories)}`} · {totalStock(p)} in stock
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {p.product_variants.map((v) => (
-                      <StockStepper key={v.id} size={sizeLabel(v.size) ?? 'Stock'} stock={v.stock} onCommit={(n) => changeStock(p, v.id, n)} />
-                    ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate font-medium">{p.name}</h3>
+                      {isSoldOut(p) && <SoldOutBadge />}
+                    </div>
+                    <p className="text-sm text-muted">
+                      {formatPrice(p.price)} · {CONDITION_LABEL[p.condition]}{p.category && ` · ${matchCategory(p.category, allCategories)}`} · {totalStock(p)} in stock
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {p.product_variants.map((v) => (
+                        <StockStepper key={v.id} size={sizeLabel(v.size) ?? 'Stock'} stock={v.stock} onCommit={(n) => changeStock(p, v.id, n)} />
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
-                <button className="btn-ghost px-4 py-1.5" onClick={() => toggleSoldOut(p)} disabled={busyId === p.id}>
-                  {p.is_sold_out ? 'Mark available' : 'Mark sold out'}
-                </button>
-                <Link to={`/admin/edit/${p.id}`} className="btn-ghost px-4 py-1.5">Edit</Link>
-                <button className="btn-danger ml-auto px-4 py-1.5" onClick={() => setConfirming(p)} disabled={busyId === p.id}>Delete</button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
+                  <button className="btn-ghost px-4 py-1.5" onClick={() => toggleSoldOut(p)} disabled={busyId === p.id}>
+                    {p.is_sold_out ? 'Mark available' : 'Mark sold out'}
+                  </button>
+                  <Link to={`/admin/edit/${p.id}`} className="btn-ghost px-4 py-1.5">Edit</Link>
+                  <button className="btn-danger ml-auto px-4 py-1.5" onClick={() => setConfirmingDelete([p])} disabled={busyId === p.id}>Delete</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
-      {confirming && (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true">
-          <div className="w-full max-w-sm rounded-2xl bg-surface p-5">
-            <h2 className="font-display text-xl">Delete “{confirming.name}”?</h2>
-            <p className="mt-2 text-sm text-muted">
-              This permanently removes the item, its sizes and {confirming.image_paths.length} photo(s) to free up space. It can't be undone.
-            </p>
-            <div className="mt-5 flex gap-3">
-              <button className="btn flex-1 bg-red-700 text-white hover:bg-red-800" onClick={confirmDelete}>Delete</button>
-              <button className="btn-ghost flex-1" onClick={() => setConfirming(null)}>Cancel</button>
-            </div>
+      {picked.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] motion-safe:animate-[sheet-up_.3s_cubic-bezier(.16,1,.3,1)_backwards]">
+          <div
+            role="toolbar"
+            aria-label="Actions for selected items"
+            className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl bg-ink p-2 pl-4 text-white shadow-2xl"
+          >
+            <span className="mr-auto text-sm font-medium">{picked.length} selected</span>
+            <button className="rounded-full px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-50" disabled={busy} onClick={() => bulkSoldOut(true)}>Sold out</button>
+            <button className="rounded-full px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-50" disabled={busy} onClick={() => bulkSoldOut(false)}>Available</button>
+            <button
+              className="rounded-full px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-50"
+              disabled={busy}
+              onClick={() => {
+                setNewCategory('')
+                setCategoryDialog(true)
+              }}
+            >
+              Category
+            </button>
+            <button className="rounded-full px-3 py-2 text-sm text-red-300 hover:bg-white/10 disabled:opacity-50" disabled={busy} onClick={() => setConfirmingDelete(picked)}>Delete</button>
+            <button className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/10" onClick={clearPicked} aria-label="Clear selection">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
+      )}
+
+      {confirmingDelete && (
+        <Dialog title={confirmingDelete.length === 1 ? `Delete “${confirmingDelete[0].name}”?` : `Delete ${plural(confirmingDelete.length, 'item')}?`} onClose={() => setConfirmingDelete(null)}>
+          <p className="mt-2 text-sm text-muted">
+            {confirmingDelete.length === 1 ? 'It moves' : 'They move'} to <strong className="text-ink">Recently deleted</strong> and
+            {' '}{confirmingDelete.length === 1 ? 'disappears' : 'disappear'} from the shop. You can restore {confirmingDelete.length === 1 ? 'it' : 'them'} for {TRASH_DAYS} days,
+            then {confirmingDelete.length === 1 ? 'it is' : 'they are'} removed for good, photos included.
+          </p>
+          <div className="mt-5 flex gap-3">
+            <button className="btn flex-1 bg-red-700 text-white hover:bg-red-800" onClick={confirmTrash}>Delete</button>
+            <button className="btn-ghost flex-1" onClick={() => setConfirmingDelete(null)}>Cancel</button>
+          </div>
+        </Dialog>
+      )}
+
+      {categoryDialog && (
+        <Dialog title={`Change category of ${plural(picked.length, 'item')}`} onClose={() => setCategoryDialog(false)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              saveBulkCategory()
+            }}
+          >
+            <label className="label mt-3" htmlFor="bulk-category">New category</label>
+            <input
+              id="bulk-category"
+              className="input"
+              list="bulk-category-options"
+              autoComplete="off"
+              autoFocus
+              placeholder="e.g. Dresses (leave empty for none)"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+            />
+            <datalist id="bulk-category-options">
+              {allCategories.map((c) => <option key={c.key} value={c.label} />)}
+            </datalist>
+            {newCategory.trim() && matchCategory(newCategory, allCategories) !== newCategory.trim() && (
+              <p className="mt-1.5 text-xs text-muted">
+                Will be saved as <span className="font-medium text-ink">“{matchCategory(newCategory, allCategories)}”</span> to match your existing category.
+              </p>
+            )}
+            <div className="mt-5 flex gap-3">
+              <button type="submit" className="btn-primary flex-1">Save</button>
+              <button type="button" className="btn-ghost flex-1" onClick={() => setCategoryDialog(false)}>Cancel</button>
+            </div>
+          </form>
+        </Dialog>
       )}
       <Toast message={toast} onDone={() => setToast(null)} />
     </>
   )
 }
 
-/** One number on the Overview row. */
-function StatCard({ label, value, note, loading, highlight = false, className = '' }: {
+/** Centered on larger screens, docked to the bottom on phones. Closes on Escape or a tap outside. */
+function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-sm rounded-2xl bg-surface p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+        <h2 id="dialog-title" className="font-display text-xl">{title}</h2>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** One number on the Overview row. With `to` or `onClick` the whole card is a shortcut. */
+function StatCard({ label, value, note, loading, highlight = false, to, onClick }: {
   label: string
   value: number | string
   note: string
   loading: boolean
   highlight?: boolean
-  className?: string
+  to?: string
+  onClick?: () => void
 }) {
   const shown = typeof value === 'number' ? value.toLocaleString() : value
-  return (
-    <div className={`min-w-0 rounded-2xl border border-line bg-surface p-4 md:p-5 ${className}`}>
+  const interactive = Boolean(to || onClick)
+  const className = `block min-w-0 rounded-2xl border border-line bg-surface p-4 text-left md:p-5 ${
+    interactive ? 'transition hover:border-brand hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand' : ''
+  }`
+  const body = (
+    <>
       <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
       {loading ? (
         <>
-          <Bone className="mt-2 h-9 w-20" />
+          <Bone className="mt-2 h-8 w-20" />
           <Bone className="mt-2 h-3 w-4/5" />
         </>
       ) : (
         <>
           {/* Long amounts wrap instead of spilling out of the card. */}
-          <p className={`mt-1 font-display text-3xl leading-tight tabular-nums [overflow-wrap:anywhere] md:text-2xl lg:text-3xl xl:text-4xl ${highlight ? 'text-brand-ink' : ''}`}>
+          <p className={`mt-1 font-display text-2xl leading-tight tabular-nums [overflow-wrap:anywhere] sm:text-3xl xl:text-4xl ${highlight ? 'text-brand-ink' : ''}`}>
             {shown}
           </p>
-          <p className="mt-1 text-xs leading-snug text-muted">{note}</p>
+          <p className={`mt-1 text-xs leading-snug ${interactive ? 'text-brand-ink' : 'text-muted'}`}>
+            {note}
+            {interactive && <span aria-hidden> →</span>}
+          </p>
         </>
       )}
-    </div>
+    </>
   )
+  if (to) return <Link to={to} className={className}>{body}</Link>
+  if (onClick) return <button type="button" onClick={onClick} className={className}>{body}</button>
+  return <div className={className}>{body}</div>
 }

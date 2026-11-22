@@ -1,5 +1,6 @@
 import { formatPrice, SHOP_NAME } from './format'
 import type { CartLine } from '../store/cart'
+import { buildOrderCode } from './sales'
 import { sizeLabel } from './types'
 
 export function buildOrderMessage(lines: CartLine[]): string {
@@ -11,7 +12,14 @@ export function buildOrderMessage(lines: CartLine[]): string {
     },
   )
   const total = lines.reduce((sum, l) => sum + l.price * l.qty, 0)
-  return [`Hi ${SHOP_NAME}! I'd like to order:`, ...items, '', `Total: ${formatPrice(total)}`].join('\n')
+  // The code lets the shop record this exact order in one step (admin → Record sale).
+  return [
+    `Hi ${SHOP_NAME}! I'd like to order:`,
+    ...items,
+    '',
+    `Total: ${formatPrice(total)}`,
+    `Order code: ${buildOrderCode(lines)}`,
+  ].join('\n')
 }
 
 /**

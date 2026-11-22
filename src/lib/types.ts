@@ -38,6 +38,8 @@ export interface Variant {
   size: string
   stock: number
   sort_order: number
+  /** Free text, e.g. "Chest 36in, Length 26in". Empty when not given. */
+  measurements: string
 }
 
 export interface Product {
@@ -51,6 +53,8 @@ export interface Product {
   is_sold_out: boolean
   created_at: string
   updated_at: string
+  /** Set when the item is in "Recently deleted". */
+  deleted_at: string | null
   product_variants: Variant[]
 }
 
@@ -58,6 +62,7 @@ export interface VariantInput {
   id?: string
   size: string
   stock: number
+  measurements?: string
 }
 
 export interface ProductInput {
@@ -92,4 +97,24 @@ export const STOCK_STATUS_LABEL: Record<StockStatus, string> = {
 export function stockStatus(p: Product): StockStatus {
   if (isSoldOut(p)) return 'sold-out'
   return totalStock(p) <= 3 ? 'low' : 'in-stock'
+}
+
+/** Items added in the last week get a "Just in" badge. */
+export const NEW_ARRIVAL_DAYS = 7
+
+export function isNewArrival(p: Pick<Product, 'created_at'>, now = Date.now()): boolean {
+  return now - new Date(p.created_at).getTime() < NEW_ARRIVAL_DAYS * 24 * 60 * 60 * 1000
+}
+
+export interface Sale {
+  id: string
+  sold_at: string
+  order_code: string
+  product_id: string | null
+  variant_id: string | null
+  product_name: string
+  size: string
+  category: string
+  qty: number
+  unit_price: number
 }

@@ -27,7 +27,7 @@ The admin adds, edits and deletes items, and manages stock and sold-out status.
    This key is *meant* to be public. It ships inside the website, and the security rules from step 2 stop it from changing anything.
    **Never** use the `secret` / `service_role` key here: it bypasses all security rules and must never be put in a website.
 
-> **Already set up before conditions (brand new / pre-loved) were added?** Run `supabase/schema.sql` again in the SQL Editor. It's safe to re-run: it adds the `condition` column and marks every existing item as brand new.
+> **Updating an existing shop?** Run `supabase/schema.sql` again in the SQL Editor **before** deploying the new version. It's safe to re-run and keeps your items. It adds anything newer than your database: the `condition` column (existing items become brand new), **sales**, **Recently deleted** and **measurements per size**. Until you run it, the updated site can't load items.
 
 ## 2. Run locally
 
@@ -65,10 +65,15 @@ If it ever pauses anyway, click **Restore** in the Supabase dashboard.
 | Stock | Tracked per size. A size with 0 stock can't be picked. |
 | Condition | Every item is **Brand new** or **Pre-loved**, chosen in the item form. Shoppers can filter by it, and pre-loved items are labelled in the cart and the Messenger order. |
 | Sold out | Shown when the admin ticks "sold out" **or** every size is at 0. |
-| Deleting | Removes the item, its sizes **and its photos** from storage, to free up space. |
+| Sorting | Shoppers can sort by newest or by price. Sold-out items always sink to the bottom. |
+| Just in | Items added in the last 7 days get a **Just in** badge. |
+| Measurements | Optional per size (e.g. "Chest 36in, Length 26in"), shown when the shopper picks that size. Accessories get one measurements field. |
+| Deleting | Moves the item to **Recently deleted**, hidden from the shop. You can restore it for 7 days. After that it's removed for good, sizes and photos included, the next time you open the admin. |
+| Bulk actions | Tick items in the admin list to mark them sold out or available, change their category, or delete them together. |
+| Sales | After confirming an order in Messenger, open **Sales → Record sale** and paste the customer's message (or just its order code). The items fill in, you can adjust prices for discounts, and saving lowers stock automatically. Overselling is blocked. **Undo** removes a sale and puts the stock back. The Sales page shows revenue, pieces sold, orders and best sellers for this month, last month or all time. |
 | Photos | Up to 5 per item, shrunk in the browser to about 1200px WebP (usually under 250 KB) before upload. |
-| Cart | Saved in the customer's browser. It's re-checked against live stock each time the cart opens. |
-| Ordering | "Order via Messenger" copies a summary (items, sizes, quantities, total) and opens your page's Messenger. The customer pastes and sends it. Messenger links can't pre-fill text, so the order is copied instead. |
-| Security | Anyone can read products. Only users in the `admins` table can change anything (enforced by Supabase Row Level Security). |
+| Cart | Saved in the customer's browser. It's re-checked against live stock when the cart opens **and** again when the customer taps "Order via Messenger". |
+| Ordering | "Order via Messenger" copies a summary (items, sizes, quantities, total, and an **order code** like `TC-3f9a1b2c.2`) and opens your page's Messenger. The customer pastes and sends it. Messenger links can't pre-fill text, so the order is copied instead. The order code lets you record the sale in one step. |
+| Security | Anyone can read products that aren't deleted. Only users in the `admins` table can change anything or see sales (enforced by Supabase Row Level Security). |
 
 Free-tier limits: 500 MB database (thousands of products) and 1 GB photo storage (about 4,000 or more compressed photos).

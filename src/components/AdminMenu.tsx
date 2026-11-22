@@ -50,6 +50,8 @@ export default function AdminMenu({ email }: { email: string }) {
         <div role="menu" className="absolute right-0 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-surface py-1 shadow-lg">
           <p className="truncate border-b border-line px-4 pb-2.5 pt-2 text-xs text-muted">Signed in as<br /><span className="text-sm text-ink">{email}</span></p>
           {pathname !== '/admin' && <Link role="menuitem" to="/admin" className={item} onClick={() => setOpen(false)}>Items</Link>}
+          {pathname !== '/admin/sales' && <Link role="menuitem" to="/admin/sales" className={item} onClick={() => setOpen(false)}>Sales</Link>}
+          {pathname !== '/admin/trash' && <Link role="menuitem" to="/admin/trash" className={item} onClick={() => setOpen(false)}>Recently deleted</Link>}
           <Link role="menuitem" to="/" className={item} onClick={() => setOpen(false)}>View shop</Link>
           <button role="menuitem" type="button" className={`${item} border-t border-line text-red-700 hover:bg-red-50`} onClick={signOut}>
             Sign out

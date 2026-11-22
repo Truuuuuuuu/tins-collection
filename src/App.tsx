@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import AdminGuard from './components/AdminGuard'
+import AdminNav from './components/AdminNav'
 import Footer from './components/Footer'
 import Header from './components/Header'
 import ScrollToTop from './components/ScrollToTop'
@@ -16,6 +17,8 @@ import ProductDetail from './pages/ProductDetail'
 const Dashboard = lazy(() => import('./pages/admin/Dashboard'))
 const Login = lazy(() => import('./pages/admin/Login'))
 const ProductForm = lazy(() => import('./pages/admin/ProductForm'))
+const Sales = lazy(() => import('./pages/admin/Sales'))
+const Trash = lazy(() => import('./pages/admin/Trash'))
 
 export default function App() {
   return (
@@ -27,6 +30,9 @@ export default function App() {
         {!isConfigured ? (
           <SetupNotice />
         ) : (
+          <>
+          {/* Lives outside the routes so its sliding tab pill survives page changes. */}
+          <AdminNav />
           <Suspense fallback={<PageSkeleton />}>
           <Routes>
             <Route path="/" element={<Catalog />} />
@@ -36,9 +42,12 @@ export default function App() {
             <Route path="/admin" element={<AdminGuard><Dashboard /></AdminGuard>} />
             <Route path="/admin/new" element={<AdminGuard><ProductForm /></AdminGuard>} />
             <Route path="/admin/edit/:id" element={<AdminGuard><ProductForm /></AdminGuard>} />
+            <Route path="/admin/sales" element={<AdminGuard><Sales /></AdminGuard>} />
+            <Route path="/admin/trash" element={<AdminGuard><Trash /></AdminGuard>} />
             <Route path="*" element={<p className="py-20 text-center text-muted">Page not found.</p>} />
           </Routes>
           </Suspense>
+          </>
         )}
       </main>
       <Footer />

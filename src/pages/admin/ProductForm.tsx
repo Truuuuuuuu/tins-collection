@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { errorMessage } from '../../lib/format'
 import { deleteImages, imageUrl, uploadImage } from '../../lib/images'
@@ -51,6 +51,7 @@ export default function ProductForm() {
   // Items without sizes (accessories) keep a single stock count instead of size rows.
   const [sized, setSized] = useState(true)
   const [plainStock, setPlainStock] = useState(1)
+  const [plainMeasurements, setPlainMeasurements] = useState('')
   const [plainId, setPlainId] = useState<string | undefined>(undefined)
   const [photos, setPhotos] = useState<Photo[]>([])
   const [originalPaths, setOriginalPaths] = useState<string[]>([])
@@ -79,9 +80,10 @@ export default function ProductForm() {
       if (p.product_variants.length && !hasSizes(p.product_variants)) {
         setSized(false)
         setPlainStock(p.product_variants[0].stock)
+        setPlainMeasurements(p.product_variants[0].measurements)
         setPlainId(p.product_variants[0].id)
       } else {
-        setVariants(p.product_variants.map((v) => ({ id: v.id, size: v.size, stock: v.stock, fixed: presetIndex(v.size) !== -1 })))
+        setVariants(p.product_variants.map((v) => ({ id: v.id, size: v.size, stock: v.stock, measurements: v.measurements, fixed: presetIndex(v.size) !== -1 })))
       }
       setPhotos(p.image_paths.map((path) => ({ kind: 'stored', path })))
       setOriginalPaths(p.image_paths)
@@ -111,6 +113,37 @@ export default function ProductForm() {
     })
 
   const makeCover = (i: number) => setPhotos((ps) => [ps[i], ...ps.filter((_, j) => j !== i)])
+
+  // ---- Reorder photos by dragging the handle (mouse or finger), or with the arrow keys ----
+  const [dragging, setDragging] = useState<number | null>(null)
+  const movePhoto = (from: number, to: number) =>
+    setPhotos((ps) => {
+      if (to < 0 || to >= ps.length || from === to) return ps
+      const next = [...ps]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  const onHandleDown = (e: ReactPointerEvent, i: number) => {
+    e.preventDefault()
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // Capture can fail for synthetic pointers; dragging still works while over the handle.
+    }
+    setDragging(i)
+  }
+  const onHandleMove = (e: ReactPointerEvent) => {
+    if (dragging === null) return
+    // Which photo tile is under the pointer right now?
+    const tile = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-photo-index]')
+    const over = tile ? Number(tile.dataset.photoIndex) : dragging
+    if (over !== dragging) {
+      movePhoto(dragging, over)
+      setDragging(over)
+    }
+  }
+  const onHandleUp = () => setDragging(null)
 
   const hasSize = (size: string) => variants.some((v) => presetIndex(v.size) === presetIndex(size))
 
@@ -169,7 +202,7 @@ export default function ProductForm() {
         image_paths: paths,
         variants: sized
           ? variants.map((v) => ({ ...v, stock: Number(v.stock) }))
-          : [{ id: plainId, size: NO_SIZE, stock: plainStock }],
+          : [{ id: plainId, size: NO_SIZE, stock: plainStock, measurements: plainMeasurements }],
       }
       if (id) await updateProduct(id, input)
       else await createProduct(input)
@@ -276,6 +309,8 @@ export default function ProductForm() {
               <span className="text-sm font-medium">How many do you have?</span>
               <CountStepper value={plainStock} onChange={setPlainStock} label="stock" />
             </div>
+            <label className="label mt-4" htmlFor="plain-measurements">Measurements (optional)</label>
+            <input id="plain-measurements" className="input" placeholder="e.g. 25 × 18 × 8 cm, strap 120 cm" value={plainMeasurements} maxLength={200} onChange={(e) => setPlainMeasurements(e.target.value)} />
           </div>
         ) : (
           <>
@@ -317,16 +352,26 @@ export default function ProductForm() {
                 <span className="w-9" />
               </div>
             )}
-            <div className="mt-2 space-y-2">
+            <div className="mt-2 space-y-3">
               {variants.map((v, i) => (
-                <div key={v.id ?? `new-${i}`} className="flex items-center gap-2">
-                  {v.fixed ? (
-                    <span className="flex-1 px-3 py-2 text-sm font-medium">{v.size}</span>
-                  ) : (
-                    <input className="input flex-1" placeholder="e.g. 28, 7.5, 2–3 yrs" aria-label="Size" value={v.size} maxLength={30} autoFocus={!v.id && !v.size} onChange={(e) => updateVariant(i, { size: e.target.value })} />
-                  )}
-                  <CountStepper value={v.stock} onChange={(stock) => updateVariant(i, { stock })} label={v.size ? `size ${v.size}` : 'this size'} />
-                  <button type="button" className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700 disabled:opacity-30" aria-label={`Remove size ${v.size}`} onClick={() => setVariants((vs) => vs.filter((_, j) => j !== i))}>✕</button>
+                <div key={v.id ?? `new-${i}`} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    {v.fixed ? (
+                      <span className="flex-1 px-3 py-2 text-sm font-medium">{v.size}</span>
+                    ) : (
+                      <input className="input flex-1" placeholder="e.g. 28, 7.5, 2–3 yrs" aria-label="Size" value={v.size} maxLength={30} autoFocus={!v.id && !v.size} onChange={(e) => updateVariant(i, { size: e.target.value })} />
+                    )}
+                    <CountStepper value={v.stock} onChange={(stock) => updateVariant(i, { stock })} label={v.size ? `size ${v.size}` : 'this size'} />
+                    <button type="button" className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700 disabled:opacity-30" aria-label={`Remove size ${v.size}`} onClick={() => setVariants((vs) => vs.filter((_, j) => j !== i))}>✕</button>
+                  </div>
+                  <input
+                    className="input h-9 text-xs"
+                    placeholder="Measurements (optional), e.g. Chest 36in, Length 26in"
+                    aria-label={`Measurements for size ${v.size || 'this size'}`}
+                    value={v.measurements ?? ''}
+                    maxLength={200}
+                    onChange={(e) => updateVariant(i, { measurements: e.target.value })}
+                  />
                 </div>
               ))}
             </div>
@@ -338,11 +383,39 @@ export default function ProductForm() {
         <div className="flex items-center justify-between">
           <h2 className="font-medium">Photos <span className="text-sm font-normal text-muted">({photos.length}/{MAX_IMAGES}, first is the cover)</span></h2>
         </div>
+        {photos.length > 1 && <p className="mt-1 text-xs text-muted">Drag the ⠿ handle to change the order.</p>}
         <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
           {photos.map((p, i) => (
-            <div key={p.kind === 'stored' ? p.path : p.preview} className="group relative aspect-[4/5] overflow-hidden rounded-lg bg-subtle">
-              <img src={p.kind === 'stored' ? imageUrl(p.path) : p.preview} alt="" className="h-full w-full object-cover" />
+            <div
+              key={p.kind === 'stored' ? p.path : p.preview}
+              data-photo-index={i}
+              className={`group relative aspect-[4/5] overflow-hidden rounded-lg bg-subtle transition ${dragging === i ? 'z-10 scale-105 shadow-lg ring-2 ring-brand' : ''}`}
+            >
+              <img src={p.kind === 'stored' ? imageUrl(p.path) : p.preview} alt="" className="pointer-events-none h-full w-full select-none object-cover" draggable={false} />
               {i === 0 && <span className="absolute left-1 top-1 rounded bg-ink px-1.5 py-0.5 text-[10px] text-white">Cover</span>}
+              {photos.length > 1 && (
+                <button
+                  type="button"
+                  className="absolute right-1 top-1 flex h-8 w-8 cursor-grab touch-none items-center justify-center rounded-md bg-white/90 text-ink shadow-sm active:cursor-grabbing"
+                  aria-label={`Move photo ${i + 1}. Use the left and right arrow keys.`}
+                  onPointerDown={(e) => onHandleDown(e, i)}
+                  onPointerMove={onHandleMove}
+                  onPointerUp={onHandleUp}
+                  onPointerCancel={onHandleUp}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                      e.preventDefault()
+                      movePhoto(i, i + (e.key === 'ArrowLeft' ? -1 : 1))
+                    }
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" />
+                    <circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" />
+                    <circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" />
+                  </svg>
+                </button>
+              )}
               <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/50 p-1">
                 {i !== 0 ? <button type="button" className="text-[11px] text-white" onClick={() => makeCover(i)}>Cover</button> : <span />}
                 <button type="button" className="text-[11px] text-white" onClick={() => removePhoto(i)} aria-label="Remove photo">Remove</button>

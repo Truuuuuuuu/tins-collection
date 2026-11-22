@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { formatPrice } from '../lib/format'
 import { imageUrl } from '../lib/images'
 import type { Product } from '../lib/types'
-import { hasSizes, isSoldOut, totalStock } from '../lib/types'
+import { hasSizes, isNewArrival, isSoldOut, totalStock } from '../lib/types'
 import ConditionBadge from './ConditionBadge'
 import SoldOutBadge from './SoldOutBadge'
 
@@ -24,11 +24,18 @@ export default function ProductCard({ product }: { product: Product }) {
         ) : (
           <div className="flex h-full items-center justify-center font-display text-4xl text-muted/30">T</div>
         )}
-        {soldOut ? (
-          <SoldOutBadge className="absolute left-3 top-3" />
-        ) : (
-          <ConditionBadge condition={product.condition} className="absolute left-3 top-3 shadow-sm" />
-        )}
+        <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
+          {soldOut ? (
+            <SoldOutBadge />
+          ) : (
+            <ConditionBadge condition={product.condition} className="shadow-sm" />
+          )}
+          {!soldOut && isNewArrival(product) && (
+            <span className="inline-flex items-center rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-white shadow-sm">
+              Just in
+            </span>
+          )}
+        </div>
       </div>
       <div className="mt-3">
         <h3 className={`truncate text-sm font-medium ${soldOut ? 'text-muted' : ''}`}>{product.name}</h3>

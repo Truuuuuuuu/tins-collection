@@ -1,0 +1,412 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import CountStepper from '../../components/CountStepper'
+import { AdminListSkeleton, Bone } from '../../components/Skeletons'
+import Toast from '../../components/Toast'
+import { errorMessage, formatPrice } from '../../lib/format'
+import { fetchSales, parseOrderCode, recordSale, saleTotal, startOfMonth, undoSale } from '../../lib/sales'
+import type { Product, Sale } from '../../lib/types'
+import { sizeLabel } from '../../lib/types'
+import { useProducts } from '../../lib/useProducts'
+
+type Period = 'month' | 'last-month' | 'all'
+const PERIOD_LABEL: Record<Period, string> = { month: 'This month', 'last-month': 'Last month', all: 'All time' }
+
+function periodRange(period: Period): [Date | null, Date | null] {
+  const thisMonth = startOfMonth()
+  if (period === 'month') return [thisMonth, null]
+  if (period === 'last-month') return [new Date(thisMonth.getFullYear(), thisMonth.getMonth() - 1, 1), thisMonth]
+  return [null, null]
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+const dayFormat = new Intl.DateTimeFormat('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+const timeFormat = new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit' })
+
+export default function Sales() {
+  const [sales, setSales] = useState<Sale[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [period, setPeriod] = useState<Period>('month')
+  const [toast, setToast] = useState<string | null>(null)
+  const [undoing, setUndoing] = useState<string | null>(null)
+  const [confirmUndo, setConfirmUndo] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
+  const recordOpen = params.get('record') === '1'
+  const { products, reload: reloadProducts } = useProducts()
+
+  const load = () =>
+    fetchSales()
+      .then((s) => {
+        setSales(s)
+        setLoadError(null)
+      })
+      .catch((e) => setLoadError(errorMessage(e, 'Could not load sales')))
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const [from, to] = periodRange(period)
+  const inPeriod = useMemo(
+    () => (sales ?? []).filter((s) => (!from || new Date(s.sold_at) >= from) && (!to || new Date(s.sold_at) < to)),
+    [sales, from, to],
+  )
+  const pieces = inPeriod.reduce((n, s) => n + s.qty, 0)
+  // A pasted order code ties lines into one order; lines without a code count as their own order.
+  const orders = new Set(inPeriod.map((s) => s.order_code || s.id)).size
+
+  const bestSellers = useMemo(() => {
+    const byItem = new Map<string, { name: string; qty: number; total: number }>()
+    for (const s of inPeriod) {
+      const key = s.product_id ?? s.product_name
+      const row = byItem.get(key) ?? { name: s.product_name, qty: 0, total: 0 }
+      row.qty += s.qty
+      row.total += s.qty * s.unit_price
+      byItem.set(key, row)
+    }
+    return [...byItem.values()].sort((a, b) => b.qty - a.qty || b.total - a.total).slice(0, 5)
+  }, [inPeriod])
+
+  const byDay = useMemo(() => {
+    const days = new Map<string, Sale[]>()
+    for (const s of inPeriod) {
+      const day = dayFormat.format(new Date(s.sold_at))
+      days.set(day, [...(days.get(day) ?? []), s])
+    }
+    return [...days.entries()]
+  }, [inPeriod])
+
+  const undo = async (sale: Sale) => {
+    setConfirmUndo(null)
+    setUndoing(sale.id)
+    try {
+      await undoSale(sale.id)
+      setSales((ss) => (ss ?? []).filter((s) => s.id !== sale.id))
+      reloadProducts()
+      setToast(`Undid the sale of ${sale.product_name}; stock put back`)
+    } catch (e) {
+      setToast(errorMessage(e, 'Could not undo the sale'))
+    } finally {
+      setUndoing(null)
+    }
+  }
+
+  const setRecordOpen = (open: boolean) => setParams(open ? { record: '1' } : {}, { replace: true })
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-3xl">Sales</h1>
+        {!recordOpen && (
+          <button className="btn-primary" onClick={() => setRecordOpen(true)}>+ Record sale</button>
+        )}
+      </div>
+
+      {recordOpen && (
+        <RecordSale
+          products={products}
+          onCancel={() => setRecordOpen(false)}
+          onSaved={(count) => {
+            setRecordOpen(false)
+            setToast(`Recorded ${plural(count, 'item')}; stock updated`)
+            setPeriod('month')
+            load()
+            reloadProducts()
+          }}
+        />
+      )}
+
+      {loadError ? (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">Sales aren't set up in the database yet.</p>
+          <p className="mt-1">
+            Run <code className="rounded bg-white/70 px-1">supabase/schema.sql</code> again in Supabase → SQL Editor (see README), then reload this page.
+          </p>
+          <p className="mt-1 text-amber-800/80">Details: {loadError}</p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-6 flex w-max gap-1 rounded-full border border-line bg-subtle p-1" role="group" aria-label="Period">
+            {(Object.keys(PERIOD_LABEL) as Period[]).map((p) => (
+              <button
+                key={p}
+                aria-pressed={period === p}
+                onClick={() => setPeriod(p)}
+                className={`min-h-9 rounded-full px-4 text-sm transition ${period === p ? 'bg-brand font-medium text-white shadow-sm shadow-brand/20' : 'text-muted hover:text-ink'}`}
+              >
+                {PERIOD_LABEL[p]}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+            <Stat label="Revenue" value={sales ? formatPrice(Math.round(saleTotal(inPeriod))) : null} className="col-span-2 lg:col-span-1" />
+            <Stat label="Pieces sold" value={sales ? pieces.toLocaleString() : null} />
+            <Stat label="Orders" value={sales ? orders.toLocaleString() : null} />
+          </div>
+
+          {sales && bestSellers.length > 0 && (
+            <section className="mt-8" aria-labelledby="best-title">
+              <h2 id="best-title" className="font-display text-2xl">Best sellers</h2>
+              <ol className="mt-3 divide-y divide-line rounded-2xl border border-line bg-surface">
+                {bestSellers.map((b, i) => (
+                  <li key={b.name + i} className="flex items-center gap-3 px-4 py-3 text-sm">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-soft font-semibold text-brand-ink">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{b.name}</span>
+                    <span className="shrink-0 text-muted">{plural(b.qty, 'piece')}</span>
+                    <span className="w-24 shrink-0 text-right font-semibold tabular-nums">{formatPrice(b.total)}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          <section className="mt-8" aria-labelledby="history-title">
+            <h2 id="history-title" className="font-display text-2xl">History</h2>
+            {!sales ? (
+              <AdminListSkeleton count={2} />
+            ) : byDay.length === 0 ? (
+              <p className="mt-3 rounded-2xl border border-dashed border-line p-8 text-center text-sm text-muted">
+                No sales {period === 'all' ? 'yet' : `in ${PERIOD_LABEL[period].toLowerCase()}`}. After confirming an order in Messenger, tap <strong className="text-ink">Record sale</strong> and paste the message.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-5">
+                {byDay.map(([day, daySales]) => (
+                  <div key={day}>
+                    <div className="flex items-baseline justify-between px-1">
+                      <h3 className="text-sm font-medium">{day}</h3>
+                      <span className="text-sm text-muted tabular-nums">{formatPrice(saleTotal(daySales))}</span>
+                    </div>
+                    <ul className="mt-2 divide-y divide-line rounded-2xl border border-line bg-surface">
+                      {daySales.map((s) => (
+                        <li key={s.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm ${undoing === s.id ? 'opacity-60' : ''}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">
+                              {s.product_name}
+                              {sizeLabel(s.size) && <span className="font-normal text-muted"> · {s.size}</span>}
+                            </p>
+                            <p className="text-xs text-muted">
+                              {timeFormat.format(new Date(s.sold_at))} · {s.qty} × {formatPrice(s.unit_price)}
+                              {s.order_code && <span className="font-mono"> · {s.order_code.slice(0, 14)}{s.order_code.length > 14 ? '…' : ''}</span>}
+                            </p>
+                          </div>
+                          <span className="font-semibold tabular-nums">{formatPrice(s.qty * s.unit_price)}</span>
+                          {confirmUndo === s.id ? (
+                            <span className="flex gap-1">
+                              <button className="rounded-full bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800" onClick={() => undo(s)}>
+                                Undo &amp; restock
+                              </button>
+                              <button className="rounded-full px-3 py-1.5 text-xs text-muted hover:bg-subtle" onClick={() => setConfirmUndo(null)}>Keep</button>
+                            </span>
+                          ) : (
+                            <button className="rounded-full px-3 py-1.5 text-xs text-muted hover:bg-subtle hover:text-ink" onClick={() => setConfirmUndo(s.id)} disabled={undoing === s.id}>
+                              Undo
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+      <Toast message={toast} onDone={() => setToast(null)} />
+    </>
+  )
+}
+
+function Stat({ label, value, className = '' }: { label: string; value: string | null; className?: string }) {
+  return (
+    <div className={`min-w-0 rounded-2xl border border-line bg-surface p-4 md:p-5 ${className}`}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+      {value === null ? (
+        <Bone className="mt-2 h-8 w-24" />
+      ) : (
+        <p className="mt-1 font-display text-2xl leading-tight tabular-nums [overflow-wrap:anywhere] sm:text-3xl">{value}</p>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+
+interface Line {
+  product: Product
+  variantId: string
+  qty: number
+  price: string
+}
+
+/** Fill in a sale by pasting the customer's Messenger order (or just its code), or add items by hand. */
+function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCancel: () => void; onSaved: (count: number) => void }) {
+  const [pasted, setPasted] = useState('')
+  const [code, setCode] = useState('')
+  const [lines, setLines] = useState<Line[]>([])
+  const [notice, setNotice] = useState<string | null>(null)
+  const [pick, setPick] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const root = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    root.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  const variantOf = (l: Pick<Line, 'product' | 'variantId'>) => l.product.product_variants.find((v) => v.id === l.variantId)
+
+  const addLine = (product: Product, variantId: string, qty: number) =>
+    setLines((ls) => {
+      const existing = ls.find((l) => l.variantId === variantId)
+      if (existing) return ls.map((l) => (l.variantId === variantId ? { ...l, qty: l.qty + qty } : l))
+      return [...ls, { product, variantId, qty, price: String(product.price) }]
+    })
+
+  const applyPaste = (text: string) => {
+    setPasted(text)
+    const parsed = parseOrderCode(text, products)
+    if (!parsed) {
+      setNotice(text.trim() ? "No order code found. Add the items below instead." : null)
+      return
+    }
+    setCode(parsed.code)
+    setLines(parsed.lines.map((l) => ({ product: l.product, variantId: l.variantId, qty: l.qty, price: String(l.product.price) })))
+    setNotice(
+      parsed.missing > 0
+        ? `Filled in ${plural(parsed.lines.length, 'item')}. ${plural(parsed.missing, 'item')} from this order no longer ${parsed.missing === 1 ? 'exists' : 'exist'}.`
+        : `Filled in ${plural(parsed.lines.length, 'item')} from the order.`,
+    )
+  }
+
+  // Every size with stock, for adding items by hand.
+  const options = products.flatMap((p) =>
+    p.product_variants
+      .filter((v) => v.stock > 0)
+      .map((v) => ({ value: v.id, product: p, label: `${p.name}${sizeLabel(v.size) ? ` — ${v.size}` : ''} (${v.stock} left)` })),
+  )
+
+  const problems = lines
+    .map((l) => {
+      const v = variantOf(l)
+      const label = `${l.product.name}${v && sizeLabel(v.size) ? ` (${v.size})` : ''}`
+      if (!v) return `${label} no longer exists`
+      if (l.qty > v.stock) return `Only ${v.stock} left of ${label}`
+      if (l.price === '' || Number.isNaN(Number(l.price)) || Number(l.price) < 0) return `Enter a valid price for ${label}`
+      return null
+    })
+    .filter(Boolean) as string[]
+  const total = lines.reduce((n, l) => n + l.qty * (Number(l.price) || 0), 0)
+
+  const save = async () => {
+    if (lines.length === 0 || problems.length > 0) return
+    setSaving(true)
+    setError(null)
+    try {
+      await recordSale(lines.map((l) => ({ variantId: l.variantId, qty: l.qty, unitPrice: Number(l.price) })), code)
+      onSaved(lines.reduce((n, l) => n + l.qty, 0))
+    } catch (e) {
+      setError(errorMessage(e, 'Could not record the sale'))
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section ref={root} className="mt-6 scroll-mt-36 rounded-2xl border border-brand/40 bg-surface p-4 shadow-sm sm:p-5" aria-labelledby="record-title">
+      <h2 id="record-title" className="font-display text-xl">Record a sale</h2>
+      <p className="mt-1 text-sm text-muted">Stock goes down automatically when you save.</p>
+
+      <label className="label mt-4" htmlFor="paste-order">Paste the Messenger order (or just its code)</label>
+      <textarea
+        id="paste-order"
+        rows={3}
+        className="input font-mono text-xs"
+        placeholder={"Hi Tin's Collection! I'd like to order: …\nOrder code: TC-…"}
+        value={pasted}
+        onChange={(e) => applyPaste(e.target.value)}
+      />
+      {notice && <p className="mt-1.5 text-xs text-muted">{notice}</p>}
+
+      <label className="label mt-4" htmlFor="add-item">Or add an item</label>
+      <div className="flex gap-2">
+        <select id="add-item" className="input min-w-0 flex-1" value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">Choose an item…</option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn-ghost shrink-0"
+          disabled={!pick}
+          onClick={() => {
+            const o = options.find((x) => x.value === pick)
+            if (o) addLine(o.product, o.value, 1)
+            setPick('')
+          }}
+        >
+          Add
+        </button>
+      </div>
+
+      {lines.length > 0 && (
+        <ul className="mt-5 divide-y divide-line border-y border-line">
+          {lines.map((l, i) => {
+            const v = variantOf(l)
+            return (
+              <li key={l.variantId} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+                  <p className="truncate text-sm font-medium">{l.product.name}</p>
+                  <p className="text-xs text-muted">
+                    {v && sizeLabel(v.size) ? `Size ${v.size} · ` : ''}
+                    {v ? `${v.stock} in stock` : 'No longer exists'}
+                  </p>
+                </div>
+                <CountStepper value={l.qty} onChange={(qty) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, qty: Math.max(1, qty) } : x)))} label={l.product.name} />
+                <label className="flex items-center gap-1 text-sm">
+                  <span className="text-muted">₱</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    className="input h-9 w-24"
+                    aria-label={`Price each for ${l.product.name}`}
+                    value={l.price}
+                    onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700"
+                  aria-label={`Remove ${l.product.name}`}
+                  onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                >
+                  ✕
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {problems.length > 0 && (
+        <ul className="mt-3 space-y-1 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          {problems.map((p) => <li key={p}>{p}</li>)}
+        </ul>
+      )}
+      {error && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <p className="mr-auto text-lg">
+          Total <span className="font-semibold tabular-nums">{formatPrice(total)}</span>
+        </p>
+        <button type="button" className="btn-ghost" onClick={onCancel} disabled={saving}>Cancel</button>
+        <button type="button" className="btn-primary" onClick={save} disabled={saving || lines.length === 0 || problems.length > 0}>
+          {saving ? 'Saving…' : 'Save sale'}
+        </button>
+      </div>
+    </section>
+  )
+}
