@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import BackButton from "../components/BackButton";
+import ConfirmSheet from "../components/ConfirmSheet";
 import EmptyBagIllustration from "../components/EmptyBagIllustration";
 import QtyStepper from "../components/QtyStepper";
 import Toast from "../components/Toast";
@@ -43,6 +44,7 @@ export default function Cart() {
       ?.stock ?? 1;
 
   const [checking, setChecking] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   // Re-check stock right before ordering: something may have sold since the page opened.
   // The copy starts straight away, because iPhones only allow copying right after a tap.
@@ -193,7 +195,7 @@ export default function Cart() {
             </svg>
             Order via Messenger
           </button>
-          <button className="btn-ghost" onClick={clear}>
+          <button className="btn-ghost" onClick={() => setConfirmClear(true)}>
             Clear cart
           </button>
         </div>
@@ -324,6 +326,24 @@ export default function Cart() {
             </div>
           </div>
         </div>
+      )}
+      {confirmClear && (
+        <ConfirmSheet
+          title="Clear your cart?"
+          confirmLabel="Clear cart"
+          danger
+          onConfirm={() => {
+            clear();
+            setConfirmClear(false);
+          }}
+          onClose={() => setConfirmClear(false)}
+        >
+          <p>
+            {lines.length === 1
+              ? "This removes the item from your cart. You can add it again from the shop."
+              : `This removes all ${lines.length} items from your cart. You can add them again from the shop.`}
+          </p>
+        </ConfirmSheet>
       )}
       <Toast message={toast} onDone={() => setToast(null)} />
     </div>
