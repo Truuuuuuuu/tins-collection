@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import ConfirmSheet from '../../components/ConfirmSheet'
 import CountStepper from '../../components/CountStepper'
 import Pagination from '../../components/Pagination'
+import { CategoryBars, RevenueChart } from '../../components/SalesCharts'
 import { AdminListSkeleton, Bone } from '../../components/Skeletons'
 import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
@@ -159,6 +160,16 @@ export default function Sales() {
             <Stat label="Pieces sold" value={sales ? pieces.toLocaleString() : null} positive={pieces > 0} />
             <Stat label="Orders" value={sales ? orders.toLocaleString() : null} />
           </div>
+
+          {/* Charts follow the period buttons above, like every number on this page. */}
+          {sales && inPeriod.length > 0 && (
+            <div className="mt-4 grid gap-3 lg:grid-cols-3 lg:gap-4">
+              <div className="min-w-0 lg:col-span-2">
+                <RevenueChart sales={inPeriod} period={period} from={from} />
+              </div>
+              <CategoryBars sales={inPeriod} />
+            </div>
+          )}
 
           {sales && bestSellers.length > 0 && (
             <section className="mt-8" aria-labelledby="best-title">

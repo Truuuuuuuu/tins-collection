@@ -6,6 +6,7 @@ import { deleteImages, imageUrl, uploadImage } from '../../lib/images'
 import { createProduct, fetchProduct, fetchProducts, updateProduct } from '../../lib/products'
 import type { CategoryOption } from '../../lib/categories'
 import { categoryOptions, matchCategory } from '../../lib/categories'
+import BackButton from '../../components/BackButton'
 import CountStepper from '../../components/CountStepper'
 import { ProductFormSkeleton } from '../../components/Skeletons'
 import { CONDITION_LABEL, hasSizes, NO_SIZE } from '../../lib/types'
@@ -261,8 +262,9 @@ export default function ProductForm() {
   return (
     <form onSubmit={submit} className="mx-auto max-w-2xl space-y-8">
       <div>
-        <Link to="/admin" className="text-sm text-muted hover:text-brand-ink">← Items</Link>
-        <h1 className="mt-2 font-display text-3xl">{isEdit ? 'Edit item' : 'Add item'}</h1>
+        {/* Same back button as the shop pages; falls back to the item list when opened directly. */}
+        <BackButton to="/admin" historyBack />
+        <h1 className="mt-4 font-display text-3xl">{isEdit ? 'Edit item' : 'Add item'}</h1>
       </div>
 
       <section className="space-y-4 rounded-2xl border border-line bg-surface p-5">
