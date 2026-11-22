@@ -40,7 +40,7 @@ export default function FloatingSearch({ anchor, value, onChange, onSubmit }: Pr
     >
       <form
         role="search"
-        className="flex w-full max-w-md items-center gap-2 rounded-full border border-line bg-surface/95 py-1.5 pl-5 pr-1.5 shadow-lg shadow-ink/10 backdrop-blur"
+        className="flex w-full max-w-md items-center gap-2 rounded-full border border-brand/50 bg-surface/95 py-1.5 pl-5 pr-1.5 shadow-lg shadow-ink/10 backdrop-blur"
         onSubmit={(e) => {
           e.preventDefault()
           input.current?.blur()

@@ -13,13 +13,13 @@ const STEPS = [
 export default function Footer() {
   const { pathname } = useLocation();
   if (pathname.startsWith("/admin")) return null;
-  // The homepage has a floating search bar at the bottom, so leave room for it.
+  // The homepage has a floating search bar at the bottom below lg, so leave room for it.
   const roomForSearch = pathname === "/";
   const facebook = facebookUrl();
 
   return (
     <footer
-      className={`border-t border-blush-line bg-blush ${roomForSearch ? "pb-24" : ""}`}
+      className={`border-t border-blush-line bg-blush ${roomForSearch ? "pb-24 lg:pb-0" : ""}`}
     >
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-2 md:gap-12 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
         <div>

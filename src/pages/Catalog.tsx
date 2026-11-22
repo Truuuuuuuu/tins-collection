@@ -7,10 +7,18 @@ import type { ItemType } from "../lib/types";
 import { CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType } from "../lib/types";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useProducts } from "../lib/useProducts";
+import { useSearch } from "../store/search";
+
+const TYPE_KEYWORDS: Record<string, ItemType> = {
+  accessories: "accessories",
+  accessory: "accessories",
+  clothing: "clothing",
+  clothes: "clothing",
+};
 
 export default function Catalog() {
   const { products, loading, error } = useProducts();
-  const [query, setQuery] = useState("");
+  const { query, setQuery } = useSearch();
   const [categories, setCategories] = useState<string[]>([]);
   const [types, setTypes] = useState<ItemType[]>([]);
   const [hideSoldOut, setHideSoldOut] = useState(false);
@@ -19,6 +27,8 @@ export default function Catalog() {
   const gridTop = useRef<HTMLDivElement>(null);
   // Matches Tailwind's md breakpoint: 10 per page on phones, 20 on larger screens.
   const perPage = useMediaQuery("(min-width: 768px)") ? 20 : 10;
+  // On large screens the search lives in the sticky header, so no in-page or floating search.
+  const searchInHeader = useMediaQuery("(min-width: 1024px)");
 
   const allCategories = useMemo(
     () =>
@@ -30,6 +40,8 @@ export default function Catalog() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Searching a type's name (e.g. "Accessories", "CLOTHING") shows every item of that type.
+    const searchedType = TYPE_KEYWORDS[q];
     return (
       products
         .filter((p) => types.length === 0 || types.includes(itemType(p)))
@@ -41,6 +53,7 @@ export default function Catalog() {
         .filter(
           (p) =>
             !q ||
+            (searchedType && itemType(p) === searchedType) ||
             p.name.toLowerCase().includes(q) ||
             p.description.toLowerCase().includes(q),
         )
@@ -84,17 +97,20 @@ export default function Catalog() {
 
       <div
         ref={gridTop}
+        id="results"
         className="mb-6 flex scroll-mt-24 flex-col gap-3 sm:flex-row sm:items-center"
       >
-        <div className="flex gap-2 sm:max-w-md sm:flex-1">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search items"
-            className="input h-10"
-            aria-label="Search items"
-          />
+        <div className="flex gap-2 sm:max-w-md sm:flex-1 lg:flex-none">
+          {!searchInHeader && (
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search items"
+              className="input h-10 border-brand/50"
+              aria-label="Search items"
+            />
+          )}
           <FilterMenu
             types={types}
             onTypesChange={setTypes}
@@ -250,17 +266,19 @@ export default function Catalog() {
         </>
       )}
 
-      <FloatingSearch
-        anchor={gridTop}
-        value={query}
-        onChange={setQuery}
-        onSubmit={() =>
-          gridTop.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          })
-        }
-      />
+      {!searchInHeader && (
+        <FloatingSearch
+          anchor={gridTop}
+          value={query}
+          onChange={setQuery}
+          onSubmit={() =>
+            gridTop.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            })
+          }
+        />
+      )}
     </>
   );
 }

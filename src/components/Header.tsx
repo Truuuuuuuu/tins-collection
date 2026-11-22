@@ -1,15 +1,17 @@
 import { useEffect } from 'react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { CART_TARGET_ATTR } from '../lib/flyToCart'
 import { SHOP_NAME } from '../lib/format'
 import { cartCount, useCart } from '../store/cart'
+import { useSearch } from '../store/search'
 import AdminMenu from './AdminMenu'
 import Wordmark from './Wordmark'
 
 export default function Header() {
   const count = useCart((s) => cartCount(s.lines))
-  const inAdmin = useLocation().pathname.startsWith('/admin')
+  const { pathname } = useLocation()
+  const inAdmin = pathname.startsWith('/admin')
   const auth = useAuth()
 
   useEffect(() => {
@@ -18,12 +20,13 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link to={inAdmin ? '/admin' : '/'} className="font-display text-2xl font-semibold tracking-tight">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-4 sm:px-6 lg:grid lg:grid-cols-[1fr_minmax(0,28rem)_1fr]">
+        <Link to={inAdmin ? '/admin' : '/'} className="justify-self-start font-display text-2xl font-semibold tracking-tight">
           <Wordmark />
           {inAdmin && <span className="ml-2 align-middle text-xs font-sans font-medium uppercase tracking-widest text-brand-ink">Admin</span>}
         </Link>
-        <nav className="flex items-center gap-2 text-sm">
+        {!inAdmin && <HeaderSearch onShop={pathname === '/'} />}
+        <nav className="flex items-center gap-2 justify-self-end text-sm lg:col-start-3">
           {inAdmin ? (
             auth.status === 'signed-in' && auth.isAdmin ? (
               <AdminMenu email={auth.session.user.email ?? ''} />
@@ -47,5 +50,47 @@ export default function Header() {
         </nav>
       </div>
     </header>
+  )
+}
+
+/** Large screens only: the shop search, centered in the header. Typing on another page jumps to the shop. */
+function HeaderSearch({ onShop }: { onShop: boolean }) {
+  const { query, setQuery } = useSearch()
+  const navigate = useNavigate()
+
+  return (
+    <form
+      role="search"
+      className="relative hidden w-full lg:block"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (!onShop) navigate('/')
+        // Jump down to the results, below the intro.
+        else document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }}
+    >
+      <input
+        type="search"
+        enterKeyHint="search"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          if (!onShop) navigate('/')
+        }}
+        placeholder="Search items"
+        aria-label="Search items"
+        className="input h-10 rounded-full border-brand/50 pl-4 pr-11 [&::-webkit-search-cancel-button]:hidden"
+      />
+      <button
+        type="submit"
+        className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-brand text-white transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        aria-label="Search"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+      </button>
+    </form>
   )
 }
