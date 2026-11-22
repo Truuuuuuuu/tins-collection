@@ -3,8 +3,11 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { errorMessage } from '../../lib/format'
 import { deleteImages, imageUrl, uploadImage } from '../../lib/images'
-import { createProduct, fetchProduct, updateProduct } from '../../lib/products'
+import { createProduct, fetchProduct, fetchProducts, updateProduct } from '../../lib/products'
+import type { CategoryOption } from '../../lib/categories'
+import { categoryOptions, matchCategory } from '../../lib/categories'
 import CountStepper from '../../components/CountStepper'
+import { ProductFormSkeleton } from '../../components/Skeletons'
 import { CONDITION_LABEL, hasSizes, NO_SIZE } from '../../lib/types'
 import type { Condition, VariantInput } from '../../lib/types'
 
@@ -40,6 +43,8 @@ export default function ProductForm() {
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
   const [category, setCategory] = useState('')
+  // Categories already in use, so typing "pants" reuses the existing "Pants".
+  const [knownCategories, setKnownCategories] = useState<CategoryOption[]>([])
   const [condition, setCondition] = useState<Condition>('new')
   const [soldOut, setSoldOut] = useState(false)
   const [variants, setVariants] = useState<SizeRow[]>([])
@@ -51,6 +56,12 @@ export default function ProductForm() {
   const [originalPaths, setOriginalPaths] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchProducts()
+      .then((ps) => setKnownCategories(categoryOptions(ps.map((p) => p.category))))
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (!id) return
@@ -148,7 +159,7 @@ export default function ProductForm() {
         name,
         description,
         price: Number(price),
-        category,
+        category: matchCategory(category, knownCategories),
         condition,
         is_sold_out: soldOut,
         image_paths: paths,
@@ -170,7 +181,7 @@ export default function ProductForm() {
     }
   }
 
-  if (loading) return <p className="py-20 text-center text-muted">Loading…</p>
+  if (loading) return <ProductFormSkeleton />
 
   return (
     <form onSubmit={submit} className="mx-auto max-w-2xl space-y-8">
@@ -191,7 +202,15 @@ export default function ProductForm() {
           </div>
           <div>
             <label className="label" htmlFor="category">Category</label>
-            <input id="category" className="input" placeholder="e.g. Dresses" value={category} onChange={(e) => setCategory(e.target.value)} />
+            <input id="category" className="input" placeholder="e.g. Dresses" list="category-options" autoComplete="off" value={category} onChange={(e) => setCategory(e.target.value)} />
+            <datalist id="category-options">
+              {knownCategories.map((c) => <option key={c.key} value={c.label} />)}
+            </datalist>
+            {category.trim() && matchCategory(category, knownCategories) !== category.trim() && (
+              <p className="mt-1.5 text-xs text-muted">
+                Will be saved as <span className="font-medium text-ink">“{matchCategory(category, knownCategories)}”</span> to match your existing category.
+              </p>
+            )}
           </div>
         </div>
         <fieldset>

@@ -72,6 +72,13 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 /* Page content settles in as the intro lifts. */
 html:has(.splash[data-phase="exit"]) main { animation: splash-page .9s cubic-bezier(.16,1,.3,1) .15s both; }
 @keyframes splash-page { from { transform: translateY(16px); opacity: 0; } }
+@keyframes sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes tab-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes sheet-down { to { transform: translateY(100%); } }
+@keyframes sheet-fade { from { opacity: 0; } }
+@keyframes sheet-fade-out { to { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   .splash *, .splash { animation-duration: .01ms !important; animation-delay: 0s !important; }

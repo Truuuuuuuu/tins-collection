@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
+import { PageSkeleton } from './Skeletons'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
 export default function AdminGuard({ children }: { children: ReactNode }) {
   const auth = useAuth()
-  if (auth.status === 'loading') return <p className="py-20 text-center text-muted">Checking access…</p>
+  if (auth.status === 'loading') return <PageSkeleton />
   if (auth.status === 'signed-out') return <Navigate to="/admin/login" replace />
   if (!auth.isAdmin) {
     return (

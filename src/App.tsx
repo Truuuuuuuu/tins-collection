@@ -5,6 +5,7 @@ import Footer from './components/Footer'
 import Header from './components/Header'
 import ScrollToTop from './components/ScrollToTop'
 import SetupNotice from './components/SetupNotice'
+import { PageSkeleton } from './components/Skeletons'
 import SplashIntro from './components/SplashIntro'
 import { isConfigured } from './lib/supabase'
 import Cart from './pages/Cart'
@@ -26,7 +27,7 @@ export default function App() {
         {!isConfigured ? (
           <SetupNotice />
         ) : (
-          <Suspense fallback={<p className="py-20 text-center text-muted">Loading…</p>}>
+          <Suspense fallback={<PageSkeleton />}>
           <Routes>
             <Route path="/" element={<Catalog />} />
             <Route path="/product/:id" element={<ProductDetail />} />

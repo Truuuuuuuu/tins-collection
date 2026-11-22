@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import BackButton from "../components/BackButton";
+import EmptyBagIllustration from "../components/EmptyBagIllustration";
 import QtyStepper from "../components/QtyStepper";
 import Toast from "../components/Toast";
 import { formatPrice } from "../lib/format";
@@ -67,7 +68,8 @@ export default function Cart() {
 
   if (lines.length === 0)
     return (
-      <div className="py-20 text-center">
+      <div className="flex flex-col items-center py-16 text-center">
+        <EmptyBagIllustration className="mb-6 w-56 max-w-full sm:w-64" />
         <h1 className="font-display text-3xl">Your cart is empty</h1>
         {notices.length > 0 && (
           <ul className="mt-3 text-sm text-muted">

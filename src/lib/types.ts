@@ -79,3 +79,17 @@ export function totalStock(p: Product): number {
 export function isSoldOut(p: Product): boolean {
   return p.is_sold_out || totalStock(p) === 0
 }
+
+export type StockStatus = 'in-stock' | 'low' | 'sold-out'
+
+export const STOCK_STATUS_LABEL: Record<StockStatus, string> = {
+  'in-stock': 'In stock',
+  low: 'Running low',
+  'sold-out': 'Sold out',
+}
+
+/** Running low means 3 or fewer left, the point where shoppers see "Only N left". */
+export function stockStatus(p: Product): StockStatus {
+  if (isSoldOut(p)) return 'sold-out'
+  return totalStock(p) <= 3 ? 'low' : 'in-stock'
+}

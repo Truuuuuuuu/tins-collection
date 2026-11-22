@@ -4,7 +4,7 @@ import { useAuth } from "../lib/auth";
 import { CART_TARGET_ATTR } from "../lib/flyToCart";
 import { SHOP_NAME } from "../lib/format";
 import { cartCount, useCart } from "../store/cart";
-import { useSearch } from "../store/search";
+import { useAdminSearch, useSearch } from "../store/search";
 import AdminMenu from "./AdminMenu";
 import Wordmark from "./Wordmark";
 
@@ -32,7 +32,12 @@ export default function Header() {
             </span>
           )}
         </Link>
-        {!inAdmin && <HeaderSearch onShop={pathname === "/"} />}
+        {!inAdmin ? (
+          <ShopSearch onShop={pathname === "/"} />
+        ) : (
+          auth.status === "signed-in" &&
+          auth.isAdmin && <AdminSearch onList={pathname === "/admin"} />
+        )}
         <nav className="flex items-center gap-2 justify-self-end text-sm lg:col-start-3">
           {inAdmin ? (
             auth.status === "signed-in" && auth.isAdmin ? (
@@ -78,16 +83,18 @@ export default function Header() {
 }
 
 /** Large screens only: the shop search, centered in the header. Typing on another page jumps to the shop. */
-function HeaderSearch({ onShop }: { onShop: boolean }) {
+function ShopSearch({ onShop }: { onShop: boolean }) {
   const { query, setQuery } = useSearch();
   const navigate = useNavigate();
-
   return (
-    <form
-      role="search"
-      className="relative hidden w-full lg:block"
-      onSubmit={(e) => {
-        e.preventDefault();
+    <HeaderSearch
+      query={query}
+      placeholder="Search items"
+      onType={(q) => {
+        setQuery(q);
+        if (!onShop) navigate("/");
+      }}
+      onSubmit={() => {
         if (!onShop) navigate("/");
         // Jump down to the results, below the intro.
         else
@@ -95,17 +102,55 @@ function HeaderSearch({ onShop }: { onShop: boolean }) {
             .getElementById("results")
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
       }}
+    />
+  );
+}
+
+/** Large screens only: the admin item search, centered in the header. Typing on another admin page jumps to the list. */
+function AdminSearch({ onList }: { onList: boolean }) {
+  const { query, setQuery } = useAdminSearch();
+  const navigate = useNavigate();
+  return (
+    <HeaderSearch
+      query={query}
+      placeholder="Search by name or category"
+      onType={(q) => {
+        setQuery(q);
+        if (!onList) navigate("/admin");
+      }}
+      onSubmit={() => !onList && navigate("/admin")}
+    />
+  );
+}
+
+/** Pill-shaped search field with the round pink search button. */
+function HeaderSearch({
+  query,
+  placeholder,
+  onType,
+  onSubmit,
+}: {
+  query: string;
+  placeholder: string;
+  onType: (query: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <form
+      role="search"
+      className="relative hidden w-full lg:block"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
     >
       <input
         type="search"
         enterKeyHint="search"
         value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          if (!onShop) navigate("/");
-        }}
-        placeholder="Search items"
-        aria-label="Search items"
+        onChange={(e) => onType(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
         className="input h-10 rounded-full border-brand/50 pl-4 pr-11 [&::-webkit-search-cancel-button]:hidden"
       />
       <button

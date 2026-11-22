@@ -4,6 +4,7 @@ import Lightbox from "../components/Lightbox";
 import QtyStepper from "../components/QtyStepper";
 import BackButton from "../components/BackButton";
 import ConditionBadge from "../components/ConditionBadge";
+import { ProductDetailSkeleton } from "../components/Skeletons";
 import SizePicker from "../components/SizePicker";
 import SoldOutBadge from "../components/SoldOutBadge";
 import Toast from "../components/Toast";
@@ -42,7 +43,7 @@ export default function ProductDetail() {
   }, [id]);
 
   if (product === undefined)
-    return <p className="py-20 text-center text-muted">Loading…</p>;
+    return <ProductDetailSkeleton />;
   if (product === null)
     return (
       <div className="py-20 text-center">

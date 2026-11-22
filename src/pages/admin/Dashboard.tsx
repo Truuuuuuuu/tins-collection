@@ -1,21 +1,32 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import FilterMenu from '../../components/FilterMenu'
+import { AdminListSkeleton, Bone } from '../../components/Skeletons'
 import SoldOutBadge from '../../components/SoldOutBadge'
 import StockStepper from '../../components/StockStepper'
 import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
 import { imageUrl } from '../../lib/images'
 import { deleteProduct, setSoldOut, updateStock } from '../../lib/products'
-import type { Product } from '../../lib/types'
-import { CONDITION_LABEL, isSoldOut, sizeLabel, totalStock } from '../../lib/types'
+import { categoryKey, categoryOptions } from '../../lib/categories'
+import type { Condition, ItemType, Product, StockStatus } from '../../lib/types'
+import { CONDITION_LABEL, ITEM_TYPE_LABEL, STOCK_STATUS_LABEL, isSoldOut, itemType, sizeLabel, stockStatus, totalStock } from '../../lib/types'
+import { useMediaQuery } from '../../lib/useMediaQuery'
 import { useProducts } from '../../lib/useProducts'
+import { useAdminSearch } from '../../store/search'
 
 export default function Dashboard() {
   const { products, setProducts, loading, error, reload } = useProducts()
-  const [query, setQuery] = useState('')
+  const { query, setQuery } = useAdminSearch()
+  // On large screens the search lives in the header, centered in the top bar.
+  const searchInHeader = useMediaQuery('(min-width: 1024px)')
   const [toast, setToast] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<Product | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [types, setTypes] = useState<ItemType[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [conditions, setConditions] = useState<Condition[]>([])
+  const [stock, setStock] = useState<StockStatus[]>([])
 
   const patch = (id: string, fn: (p: Product) => Product) =>
     setProducts((ps) => ps.map((p) => (p.id === id ? fn(p) : p)))
@@ -55,28 +66,122 @@ export default function Dashboard() {
   }
 
   const q = query.trim().toLowerCase()
-  const visible = products.filter((p) => !q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q))
-  const imageCount = products.reduce((n, p) => n + p.image_paths.length, 0)
+  const allCategories = useMemo(() => categoryOptions(products.map((p) => p.category)), [products])
+  const visible = products
+    .filter((p) => types.length === 0 || types.includes(itemType(p)))
+    .filter((p) => categories.length === 0 || categories.includes(categoryKey(p.category)))
+    .filter((p) => conditions.length === 0 || conditions.includes(p.condition))
+    .filter((p) => stock.length === 0 || stock.includes(stockStatus(p)))
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || categoryKey(p.category).includes(q))
+  const activeFilters = [
+    ...types.map((t) => ({ key: `type-${t}`, label: ITEM_TYPE_LABEL[t], remove: () => setTypes((xs) => xs.filter((x) => x !== t)) })),
+    ...conditions.map((c) => ({ key: `condition-${c}`, label: CONDITION_LABEL[c], remove: () => setConditions((xs) => xs.filter((x) => x !== c)) })),
+    ...categories.map((c) => ({ key: `category-${c}`, label: allCategories.find((o) => o.key === c)?.label ?? c, remove: () => setCategories((xs) => xs.filter((x) => x !== c)) })),
+    ...stock.map((s) => ({ key: `stock-${s}`, label: STOCK_STATUS_LABEL[s], remove: () => setStock((xs) => xs.filter((x) => x !== s)) })),
+  ]
+  const clearFilters = () => {
+    setTypes([])
+    setCategories([])
+    setConditions([])
+    setStock([])
+  }
+  const soldOutCount = products.filter(isSoldOut).length
+  const available = products.filter((p) => !isSoldOut(p))
+  // Only stock that can actually be bought: items marked sold out don't count.
+  const unitsInStock = available.reduce((n, p) => n + totalStock(p), 0)
+  // What everything still for sale is worth at its listed price (price × units in stock).
+  const inventoryValue = available.reduce((n, p) => n + p.price * totalStock(p), 0)
+  // Same "Only N left" threshold shoppers see on product cards.
+  const runningLow = available.filter((p) => totalStock(p) <= 3).length
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl">Items</h1>
-          <p className="mt-1 text-sm text-muted">
-            {products.length} items · {products.filter(isSoldOut).length} sold out · {imageCount} photos stored
-          </p>
+      <section aria-labelledby="overview-title">
+        <h1 id="overview-title" className="font-display text-3xl">Overview</h1>
+        {/* Phones: the money card spans the full width, the two counts sit side by side below it. */}
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+          <StatCard
+            loading={loading}
+            label="Inventory value"
+            value={formatPrice(Math.round(inventoryValue))}
+            className="col-span-2 md:col-span-1"
+            note={`Across ${plural(products.length, 'item')} listed`}
+          />
+          <StatCard
+            loading={loading}
+            label="Sold out"
+            value={soldOutCount}
+            highlight={soldOutCount > 0}
+            note={
+              products.length === 0
+                ? 'Nothing listed yet'
+                : soldOutCount === 0
+                  ? 'Everything is available'
+                  : `${Math.round((soldOutCount / products.length) * 100)}% of your items`
+            }
+          />
+          <StatCard
+            loading={loading}
+            label="Units in stock"
+            value={unitsInStock}
+            note={runningLow > 0 ? `${plural(runningLow, 'item')} running low` : 'Ready to sell'}
+          />
         </div>
+      </section>
+
+      <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
+        <h2 className="font-display text-2xl">Items</h2>
         <Link to="/admin/new" className="btn-primary">+ Add item</Link>
       </div>
 
-      <input type="search" placeholder="Search by name or category" className="input mt-6 sm:max-w-xs" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <div className="mt-6 flex gap-2 sm:max-w-md">
+        {!searchInHeader && (
+          <input type="search" placeholder="Search by name or category" aria-label="Search by name or category" className="input h-10 border-brand/50" value={query} onChange={(e) => setQuery(e.target.value)} />
+        )}
+        <FilterMenu
+          types={types}
+          onTypesChange={setTypes}
+          categories={allCategories}
+          selected={categories}
+          onChange={setCategories}
+          conditions={conditions}
+          onConditionsChange={setConditions}
+          stock={stock}
+          onStockChange={setStock}
+          resultCount={visible.length}
+        />
+      </div>
+
+      {activeFilters.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {activeFilters.map((f) => (
+            <button
+              key={f.key}
+              onClick={f.remove}
+              className="flex items-center gap-1.5 rounded-full bg-brand-soft py-1 pl-3 pr-2 text-sm text-brand-ink hover:bg-brand/15"
+              aria-label={`Remove ${f.label} filter`}
+            >
+              {f.label}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          ))}
+          <button onClick={clearFilters} className="px-1 text-sm text-muted hover:text-brand-ink">
+            Clear all
+          </button>
+          <span className="ml-auto text-sm text-muted">
+            Showing {visible.length} of {products.length}
+          </span>
+        </div>
+      )}
 
       {error && <p className="mt-4 rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {loading ? (
-        <p className="py-16 text-center text-muted">Loading…</p>
+        <AdminListSkeleton />
       ) : visible.length === 0 ? (
-        <p className="py-16 text-center text-muted">{products.length ? 'No matches.' : 'No items yet. Add your first one!'}</p>
+        <p className="py-16 text-center text-muted">{products.length ? 'No items match your search or filters.' : 'No items yet. Add your first one!'}</p>
       ) : (
         <ul className="mt-6 space-y-3">
           {visible.map((p) => (
@@ -128,5 +233,36 @@ export default function Dashboard() {
       )}
       <Toast message={toast} onDone={() => setToast(null)} />
     </>
+  )
+}
+
+/** One number on the Overview row. */
+function StatCard({ label, value, note, loading, highlight = false, className = '' }: {
+  label: string
+  value: number | string
+  note: string
+  loading: boolean
+  highlight?: boolean
+  className?: string
+}) {
+  const shown = typeof value === 'number' ? value.toLocaleString() : value
+  return (
+    <div className={`min-w-0 rounded-2xl border border-line bg-surface p-4 md:p-5 ${className}`}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+      {loading ? (
+        <>
+          <Bone className="mt-2 h-9 w-20" />
+          <Bone className="mt-2 h-3 w-4/5" />
+        </>
+      ) : (
+        <>
+          {/* Long amounts wrap instead of spilling out of the card. */}
+          <p className={`mt-1 font-display text-3xl leading-tight tabular-nums [overflow-wrap:anywhere] md:text-2xl lg:text-3xl xl:text-4xl ${highlight ? 'text-brand-ink' : ''}`}>
+            {shown}
+          </p>
+          <p className="mt-1 text-xs leading-snug text-muted">{note}</p>
+        </>
+      )}
+    </div>
   )
 }

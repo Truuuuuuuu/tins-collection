@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import EmptyRackIllustration from "../components/EmptyRackIllustration";
 import FilterMenu from "../components/FilterMenu";
 import FloatingSearch from "../components/FloatingSearch";
 import ProductCard from "../components/ProductCard";
+import { ProductGridSkeleton } from "../components/Skeletons";
 import type { Condition } from "../lib/types";
 import type { ItemType } from "../lib/types";
 import { CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType } from "../lib/types";
+import { categoryKey, categoryOptions } from "../lib/categories";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useProducts } from "../lib/useProducts";
 import { useSearch } from "../store/search";
@@ -15,6 +18,8 @@ const TYPE_KEYWORDS: Record<string, ItemType> = {
   clothing: "clothing",
   clothes: "clothing",
 };
+
+const CONDITIONS = ["all", "new", "preloved"] as const;
 
 export default function Catalog() {
   const { products, loading, error } = useProducts();
@@ -30,11 +35,9 @@ export default function Catalog() {
   // On large screens the search lives in the sticky header, so no in-page or floating search.
   const searchInHeader = useMediaQuery("(min-width: 1024px)");
 
+  // One entry per category, ignoring capitals and spacing ("Pants" and "pAnts" are the same).
   const allCategories = useMemo(
-    () =>
-      Array.from(
-        new Set(products.map((p) => p.category).filter(Boolean)),
-      ).sort(),
+    () => categoryOptions(products.map((p) => p.category)),
     [products],
   );
 
@@ -46,7 +49,9 @@ export default function Catalog() {
       products
         .filter((p) => types.length === 0 || types.includes(itemType(p)))
         .filter(
-          (p) => categories.length === 0 || categories.includes(p.category),
+          (p) =>
+            categories.length === 0 ||
+            categories.includes(categoryKey(p.category)),
         )
         .filter((p) => condition === "all" || p.condition === condition)
         .filter((p) => !hideSoldOut || !isSoldOut(p))
@@ -55,6 +60,7 @@ export default function Catalog() {
             !q ||
             (searchedType && itemType(p) === searchedType) ||
             p.name.toLowerCase().includes(q) ||
+            categoryKey(p.category).includes(q) ||
             p.description.toLowerCase().includes(q),
         )
         // Available items first, sold-out ones sink to the bottom.
@@ -119,21 +125,30 @@ export default function Catalog() {
             onChange={setCategories}
             hideSoldOut={hideSoldOut}
             onHideSoldOutChange={setHideSoldOut}
+            resultCount={visible.length}
           />
         </div>
         <div
-          className="grid shrink-0 grid-cols-3 gap-1 rounded-full border border-line bg-subtle p-1 sm:ml-auto"
+          className="relative grid shrink-0 grid-cols-3 gap-1 rounded-full border border-line bg-subtle p-1 sm:ml-auto"
           role="group"
           aria-label="Condition"
         >
-          {(["all", "new", "preloved"] as const).map((c) => (
+          {/* Pink pill that slides under the selected tab. Each step is one column plus the 4px gap. */}
+          <span
+            aria-hidden
+            className="absolute inset-y-1 left-1 w-[calc((100%-1rem)/3)] rounded-full bg-brand shadow-sm shadow-brand/20 transition-transform duration-300 ease-[cubic-bezier(.16,1,.3,1)] motion-reduce:transition-none"
+            style={{
+              transform: `translateX(calc(${CONDITIONS.indexOf(condition)} * (100% + 0.25rem)))`,
+            }}
+          />
+          {CONDITIONS.map((c) => (
             <button
               key={c}
               onClick={() => setCondition(c)}
               aria-pressed={c === condition}
-              className={`min-h-9 rounded-full px-3 text-sm transition ${
+              className={`relative min-h-9 rounded-full px-3 text-sm transition-colors duration-300 ${
                 c === condition
-                  ? "bg-brand font-medium text-white shadow-sm shadow-brand/20"
+                  ? "font-medium text-white"
                   : "text-muted hover:text-ink"
               }`}
             >
@@ -153,7 +168,7 @@ export default function Catalog() {
             })),
             ...categories.map((c) => ({
               key: `category-${c}`,
-              label: c,
+              label: allCategories.find((o) => o.key === c)?.label ?? c,
               remove: () => setCategories((cs) => cs.filter((x) => x !== c)),
             })),
             ...(hideSoldOut
@@ -204,25 +219,34 @@ export default function Catalog() {
         <p className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</p>
       )}
       {loading ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="aspect-[4/5] animate-pulse rounded-2xl bg-subtle"
-            />
-          ))}
+        <ProductGridSkeleton />
+      ) : products.length === 0 ? (
+        <div className="flex flex-col items-center py-16 text-center">
+          <EmptyRackIllustration className="w-56 max-w-full sm:w-64" />
+          <p className="mt-6 text-muted">No items yet. Check back soon!</p>
         </div>
       ) : visible.length === 0 ? (
-        <p className="py-20 text-center text-muted">
-          {products.length === 0
-            ? "No items yet. Check back soon!"
-            : "Nothing matches your search."}
+        <p
+          key={condition}
+          className="py-20 text-center text-muted motion-safe:animate-[tab-in_.4s_ease-out_both]"
+        >
+          Nothing matches your search.
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 lg:grid-cols-4">
-            {pageItems.map((p) => (
-              <ProductCard key={p.id} product={p} />
+          {/* Keyed on the tab so switching tabs remounts the grid and replays the staggered fade-in. */}
+          <div
+            key={condition}
+            className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 lg:grid-cols-4"
+          >
+            {pageItems.map((p, i) => (
+              <div
+                key={p.id}
+                className="motion-safe:animate-[tab-in_.45s_cubic-bezier(.16,1,.3,1)_both]"
+                style={{ animationDelay: `${Math.min(i, 11) * 40}ms` }}
+              >
+                <ProductCard product={p} />
+              </div>
             ))}
           </div>
           <nav
