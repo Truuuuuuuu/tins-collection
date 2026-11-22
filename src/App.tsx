@@ -32,7 +32,7 @@ export default function App() {
         ) : (
           <>
           {/* Lives outside the routes so its sliding tab pill survives page changes. */}
-          <AdminNav />
+          <AdminNav placement="page" />
           <Suspense fallback={<PageSkeleton />}>
           <Routes>
             <Route path="/" element={<Catalog />} />

@@ -24,6 +24,8 @@ interface Props {
   onStockChange?: (stock: StockStatus[]) => void
   /** How many items match right now, shown on the phone sheet's "Show N items" button. */
   resultCount?: number
+  /** Which edge the dropdown lines up with on larger screens. Use "right" when the button sits at the right end of a row. */
+  align?: 'left' | 'right'
 }
 
 // How long the phone sheet takes to slide away; matches the sheet-down animation.
@@ -32,7 +34,7 @@ const CLOSE_MS = 220
 const toggled = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((x) => x !== value) : [...list, value])
 
 /** Filter-icon button that opens checklists of item types and categories (several can be picked) plus availability. */
-export default function FilterMenu({ types, onTypesChange, categories, selected, onChange, hideSoldOut = false, onHideSoldOutChange, conditions, onConditionsChange, stock, onStockChange, resultCount }: Props) {
+export default function FilterMenu({ types, onTypesChange, categories, selected, onChange, hideSoldOut = false, onHideSoldOutChange, conditions, onConditionsChange, stock, onStockChange, resultCount, align = 'left' }: Props) {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   // Phones get a bottom sheet; larger screens keep the dropdown.
@@ -246,7 +248,7 @@ export default function FilterMenu({ types, onTypesChange, categories, selected,
       </button>
 
       {open && !asSheet && (
-        <div className="absolute left-0 z-30 mt-2 max-h-[calc(100dvh-9rem)] w-64 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-2 shadow-lg">
+        <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-30 mt-2 max-h-[calc(100dvh-9rem)] w-64 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-2 shadow-lg`}>
           {sections}
         </div>
       )}

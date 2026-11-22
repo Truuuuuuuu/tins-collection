@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import EmptyRackIllustration from "../components/EmptyRackIllustration";
 import FilterMenu from "../components/FilterMenu";
 import FloatingSearch from "../components/FloatingSearch";
+import Pagination from "../components/Pagination";
 import ProductCard from "../components/ProductCard";
 import type { SortOrder } from "../lib/sort";
 import SortMenu from "../components/SortMenu";
@@ -11,6 +12,7 @@ import type { ItemType } from "../lib/types";
 import { CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType } from "../lib/types";
 import { categoryKey, categoryOptions } from "../lib/categories";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import { usePagination } from "../lib/usePagination";
 import { useProducts } from "../lib/useProducts";
 import { useSearch } from "../store/search";
 
@@ -31,7 +33,6 @@ export default function Catalog() {
   const [hideSoldOut, setHideSoldOut] = useState(false);
   const [condition, setCondition] = useState<Condition | "all">("all");
   const [sort, setSort] = useState<SortOrder>("newest");
-  const [page, setPage] = useState(1);
   const gridTop = useRef<HTMLDivElement>(null);
   // Matches Tailwind's md breakpoint: 10 per page on phones, 20 on larger screens.
   const perPage = useMediaQuery("(min-width: 768px)") ? 20 : 10;
@@ -77,14 +78,17 @@ export default function Catalog() {
     );
   }, [products, query, types, categories, condition, hideSoldOut, sort]);
 
-  // Start over from page 1 whenever the filters change.
-  useEffect(() => setPage(1), [query, types, categories, condition, hideSoldOut, sort]);
 
-  const pageCount = Math.max(1, Math.ceil(visible.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const pageItems = visible.slice(
-    (currentPage - 1) * perPage,
-    currentPage * perPage,
+  // Start over from page 1 whenever the search, filters or sort change.
+  const {
+    page: currentPage,
+    pageCount,
+    pageItems,
+    setPage,
+  } = usePagination(
+    visible,
+    perPage,
+    JSON.stringify([query, types, categories, condition, hideSoldOut, sort]),
   );
 
   const goTo = (p: number) => {
@@ -259,44 +263,12 @@ export default function Catalog() {
               </div>
             ))}
           </div>
-          <nav
-            className="mt-10 flex items-center justify-center gap-2"
-            aria-label="Pagination"
-          >
-            <button
-              className="btn-ghost min-h-11 px-4"
-              onClick={() => goTo(currentPage - 1)}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </button>
-            <p className="px-2 text-sm text-muted sm:hidden">
-              {currentPage} / {pageCount}
-            </p>
-            <div className="hidden gap-1 sm:flex">
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  onClick={() => goTo(n)}
-                  aria-current={n === currentPage ? "page" : undefined}
-                  className={`h-11 min-w-11 rounded-full px-3 text-sm transition ${
-                    n === currentPage
-                      ? "bg-brand font-semibold text-white"
-                      : "text-muted hover:text-brand-ink"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-            <button
-              className="btn-ghost min-h-11 px-4"
-              onClick={() => goTo(currentPage + 1)}
-              disabled={currentPage === pageCount}
-            >
-              Next
-            </button>
-          </nav>
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            onChange={goTo}
+            className="mt-10"
+          />
         </>
       )}
 

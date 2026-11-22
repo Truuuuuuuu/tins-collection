@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Pagination from '../../components/Pagination'
 import { AdminListSkeleton } from '../../components/Skeletons'
 import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
 import { imageUrl } from '../../lib/images'
 import { deleteProductForever, fetchDeletedProducts, purgeExpiredTrash, restoreProduct, TRASH_DAYS } from '../../lib/products'
 import type { Product } from '../../lib/types'
+import { usePagination } from '../../lib/usePagination'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -21,6 +23,8 @@ export default function Trash() {
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
+  const pager = usePagination(items ?? [], 10)
+  const top = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     // Clear out anything past the limit first, so the list only shows restorable items.
@@ -47,7 +51,7 @@ export default function Trash() {
 
   return (
     <>
-      <h1 className="font-display text-3xl">Recently deleted</h1>
+      <h1 ref={top} className="scroll-mt-36 font-display text-3xl">Recently deleted</h1>
       <p className="mt-1 text-sm text-muted">
         Deleted items stay here for {TRASH_DAYS} days, hidden from the shop. After that they're removed for good, photos included.
       </p>
@@ -58,8 +62,10 @@ export default function Trash() {
       ) : items && items.length === 0 ? (
         <p className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-sm text-muted">Nothing here. Deleted items show up here.</p>
       ) : (
-        <ul className="mt-6 space-y-3">
-          {(items ?? []).map((p) => {
+        <>
+        <p className="mt-6 text-right text-sm text-muted tabular-nums">{pager.range}</p>
+        <ul className="mt-2 space-y-3">
+          {pager.pageItems.map((p) => {
             const left = daysLeft(p, now)
             return (
               <li key={p.id} className={`flex flex-wrap items-center gap-4 rounded-2xl border border-line bg-surface p-4 ${busyId === p.id ? 'opacity-60' : ''}`}>
@@ -94,6 +100,16 @@ export default function Trash() {
             )
           })}
         </ul>
+        <Pagination
+          page={pager.page}
+          pageCount={pager.pageCount}
+          onChange={(n) => {
+            pager.setPage(n)
+            top.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }}
+          className="mt-8"
+        />
+        </>
       )}
       <Toast message={toast} onDone={() => setToast(null)} />
     </>

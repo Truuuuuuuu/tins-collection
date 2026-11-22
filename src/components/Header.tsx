@@ -4,8 +4,9 @@ import { useAuth } from "../lib/auth";
 import { CART_TARGET_ATTR } from "../lib/flyToCart";
 import { SHOP_NAME } from "../lib/format";
 import { cartCount, useCart } from "../store/cart";
-import { useAdminSearch, useSearch } from "../store/search";
+import { useSearch } from "../store/search";
 import AdminMenu from "./AdminMenu";
+import AdminNav from "./AdminNav";
 import Wordmark from "./Wordmark";
 
 export default function Header() {
@@ -36,7 +37,7 @@ export default function Header() {
           <ShopSearch onShop={pathname === "/"} />
         ) : (
           auth.status === "signed-in" &&
-          auth.isAdmin && <AdminSearch onList={pathname === "/admin"} />
+          auth.isAdmin && <AdminNav placement="header" />
         )}
         <nav className="flex items-center gap-2 justify-self-end text-sm lg:col-start-3">
           {inAdmin ? (
@@ -102,23 +103,6 @@ function ShopSearch({ onShop }: { onShop: boolean }) {
             .getElementById("results")
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
       }}
-    />
-  );
-}
-
-/** Large screens only: the admin item search, centered in the header. Typing on another admin page jumps to the list. */
-function AdminSearch({ onList }: { onList: boolean }) {
-  const { query, setQuery } = useAdminSearch();
-  const navigate = useNavigate();
-  return (
-    <HeaderSearch
-      query={query}
-      placeholder="Search by name or category"
-      onType={(q) => {
-        setQuery(q);
-        if (!onList) navigate("/admin");
-      }}
-      onSubmit={() => !onList && navigate("/admin")}
     />
   );
 }

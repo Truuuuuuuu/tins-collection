@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import ConfirmSheet from '../../components/ConfirmSheet'
 import CountStepper from '../../components/CountStepper'
+import Pagination from '../../components/Pagination'
 import { AdminListSkeleton, Bone } from '../../components/Skeletons'
 import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
 import { fetchSales, parseOrderCode, recordSale, saleTotal, startOfMonth, undoSale } from '../../lib/sales'
 import type { Product, Sale } from '../../lib/types'
 import { sizeLabel } from '../../lib/types'
+import { usePagination } from '../../lib/usePagination'
 import { useProducts } from '../../lib/useProducts'
 
 type Period = 'month' | 'last-month' | 'all'
@@ -29,7 +32,7 @@ export default function Sales() {
   const [period, setPeriod] = useState<Period>('month')
   const [toast, setToast] = useState<string | null>(null)
   const [undoing, setUndoing] = useState<string | null>(null)
-  const [confirmUndo, setConfirmUndo] = useState<string | null>(null)
+  const [confirmUndo, setConfirmUndo] = useState<Sale | null>(null)
   const [params, setParams] = useSearchParams()
   const recordOpen = params.get('record') === '1'
   const { products, reload: reloadProducts } = useProducts()
@@ -67,17 +70,29 @@ export default function Sales() {
     return [...byItem.values()].sort((a, b) => b.qty - a.qty || b.total - a.total).slice(0, 5)
   }, [inPeriod])
 
+  // 20 sales per page, grouped by day. A day's total always covers the whole day,
+  // even when its sales are split across two pages.
+  const pager = usePagination(inPeriod, 20, period)
+  const historyTop = useRef<HTMLElement>(null)
+  const dayTotals = useMemo(() => {
+    const totals = new Map<string, number>()
+    for (const s of inPeriod) {
+      const day = dayFormat.format(new Date(s.sold_at))
+      totals.set(day, (totals.get(day) ?? 0) + s.qty * s.unit_price)
+    }
+    return totals
+  }, [inPeriod])
   const byDay = useMemo(() => {
     const days = new Map<string, Sale[]>()
-    for (const s of inPeriod) {
+    for (const s of pager.pageItems) {
       const day = dayFormat.format(new Date(s.sold_at))
       days.set(day, [...(days.get(day) ?? []), s])
     }
     return [...days.entries()]
-  }, [inPeriod])
+  }, [pager.pageItems])
 
+  // Runs while the confirm dialog stays open (showing "busy"), then closes it.
   const undo = async (sale: Sale) => {
-    setConfirmUndo(null)
     setUndoing(sale.id)
     try {
       await undoSale(sale.id)
@@ -141,7 +156,7 @@ export default function Sales() {
 
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
             <Stat label="Revenue" value={sales ? formatPrice(Math.round(saleTotal(inPeriod))) : null} className="col-span-2 lg:col-span-1" />
-            <Stat label="Pieces sold" value={sales ? pieces.toLocaleString() : null} />
+            <Stat label="Pieces sold" value={sales ? pieces.toLocaleString() : null} positive={pieces > 0} />
             <Stat label="Orders" value={sales ? orders.toLocaleString() : null} />
           </div>
 
@@ -161,8 +176,11 @@ export default function Sales() {
             </section>
           )}
 
-          <section className="mt-8" aria-labelledby="history-title">
-            <h2 id="history-title" className="font-display text-2xl">History</h2>
+          <section ref={historyTop} className="mt-8 scroll-mt-36" aria-labelledby="history-title">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 id="history-title" className="font-display text-2xl">History</h2>
+              {inPeriod.length > 0 && <span className="text-sm text-muted tabular-nums">{pager.range}</span>}
+            </div>
             {!sales ? (
               <AdminListSkeleton count={2} />
             ) : byDay.length === 0 ? (
@@ -175,7 +193,7 @@ export default function Sales() {
                   <div key={day}>
                     <div className="flex items-baseline justify-between px-1">
                       <h3 className="text-sm font-medium">{day}</h3>
-                      <span className="text-sm text-muted tabular-nums">{formatPrice(saleTotal(daySales))}</span>
+                      <span className="text-sm text-muted tabular-nums">{formatPrice(dayTotals.get(day) ?? saleTotal(daySales))}</span>
                     </div>
                     <ul className="mt-2 divide-y divide-line rounded-2xl border border-line bg-surface">
                       {daySales.map((s) => (
@@ -191,41 +209,67 @@ export default function Sales() {
                             </p>
                           </div>
                           <span className="font-semibold tabular-nums">{formatPrice(s.qty * s.unit_price)}</span>
-                          {confirmUndo === s.id ? (
-                            <span className="flex gap-1">
-                              <button className="rounded-full bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800" onClick={() => undo(s)}>
-                                Undo &amp; restock
-                              </button>
-                              <button className="rounded-full px-3 py-1.5 text-xs text-muted hover:bg-subtle" onClick={() => setConfirmUndo(null)}>Keep</button>
-                            </span>
-                          ) : (
-                            <button className="rounded-full px-3 py-1.5 text-xs text-muted hover:bg-subtle hover:text-ink" onClick={() => setConfirmUndo(s.id)} disabled={undoing === s.id}>
-                              Undo
-                            </button>
-                          )}
+                          <button className="rounded-full px-3 py-1.5 text-xs text-muted hover:bg-subtle hover:text-ink" onClick={() => setConfirmUndo(s)} disabled={undoing === s.id}>
+                            Undo
+                          </button>
                         </li>
                       ))}
                     </ul>
                   </div>
                 ))}
+                <Pagination
+                  page={pager.page}
+                  pageCount={pager.pageCount}
+                  onChange={(n) => {
+                    pager.setPage(n)
+                    historyTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }}
+                  className="pt-3"
+                />
               </div>
             )}
           </section>
         </>
+      )}
+      {confirmUndo && (
+        <ConfirmSheet
+          title="Undo this sale?"
+          confirmLabel={undoing ? 'Undoing…' : 'Undo & restock'}
+          danger
+          busy={undoing === confirmUndo.id}
+          onConfirm={async () => {
+            await undo(confirmUndo)
+            setConfirmUndo(null)
+          }}
+          onClose={() => setConfirmUndo(null)}
+        >
+          <p>
+            <strong className="text-ink">
+              {confirmUndo.product_name}
+              {sizeLabel(confirmUndo.size) ? ` (${confirmUndo.size})` : ''}
+            </strong>
+            {' '}· {confirmUndo.qty} × {formatPrice(confirmUndo.unit_price)} = {formatPrice(confirmUndo.qty * confirmUndo.unit_price)}
+          </p>
+          <p className="mt-2">
+            The sale is removed from your history and {plural(confirmUndo.qty, 'piece')} {confirmUndo.qty === 1 ? 'goes' : 'go'} back into stock.
+            {!confirmUndo.variant_id && ' This size no longer exists, so no stock is put back.'}
+          </p>
+        </ConfirmSheet>
       )}
       <Toast message={toast} onDone={() => setToast(null)} />
     </>
   )
 }
 
-function Stat({ label, value, className = '' }: { label: string; value: string | null; className?: string }) {
+/** `positive` turns the number green, e.g. when pieces have sold. */
+function Stat({ label, value, positive = false, className = '' }: { label: string; value: string | null; positive?: boolean; className?: string }) {
   return (
     <div className={`min-w-0 rounded-2xl border border-line bg-surface p-4 md:p-5 ${className}`}>
       <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
       {value === null ? (
         <Bone className="mt-2 h-8 w-24" />
       ) : (
-        <p className="mt-1 font-display text-2xl leading-tight tabular-nums [overflow-wrap:anywhere] sm:text-3xl">{value}</p>
+        <p className={`mt-1 font-display text-2xl leading-tight tabular-nums [overflow-wrap:anywhere] sm:text-3xl ${positive ? 'text-emerald-700' : ''}`}>{value}</p>
       )}
     </div>
   )
@@ -248,6 +292,7 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
   const [notice, setNotice] = useState<string | null>(null)
   const [pick, setPick] = useState('')
   const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const root = useRef<HTMLElement>(null)
 
@@ -309,8 +354,10 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
     } catch (e) {
       setError(errorMessage(e, 'Could not record the sale'))
       setSaving(false)
+      setConfirming(false)
     }
   }
+  const pieces = lines.reduce((n, l) => n + l.qty, 0)
 
   return (
     <section ref={root} className="mt-6 scroll-mt-36 rounded-2xl border border-brand/40 bg-surface p-4 shadow-sm sm:p-5" aria-labelledby="record-title">
@@ -403,10 +450,37 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
           Total <span className="font-semibold tabular-nums">{formatPrice(total)}</span>
         </p>
         <button type="button" className="btn-ghost" onClick={onCancel} disabled={saving}>Cancel</button>
-        <button type="button" className="btn-primary" onClick={save} disabled={saving || lines.length === 0 || problems.length > 0}>
-          {saving ? 'Saving…' : 'Save sale'}
+        <button type="button" className="btn-primary" onClick={() => setConfirming(true)} disabled={saving || lines.length === 0 || problems.length > 0}>
+          Save sale
         </button>
       </div>
+      {confirming && (
+        <ConfirmSheet
+          title="Save this sale?"
+          confirmLabel={saving ? 'Saving…' : `Save · ${formatPrice(total)}`}
+          busy={saving}
+          onConfirm={save}
+          onClose={() => setConfirming(false)}
+        >
+          <ul className="divide-y divide-line rounded-xl border border-line">
+            {lines.map((l) => {
+              const v = variantOf(l)
+              return (
+                <li key={l.variantId} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="min-w-0 truncate text-ink">
+                    {l.product.name}
+                    {v && sizeLabel(v.size) ? <span className="text-muted"> · {v.size}</span> : null}
+                  </span>
+                  <span className="shrink-0 tabular-nums">{l.qty} × {formatPrice(Number(l.price))}</span>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="mt-3">
+            Stock goes down by {plural(pieces, 'piece')}. You can undo this later from the history.
+          </p>
+        </ConfirmSheet>
+      )}
     </section>
   )
 }
