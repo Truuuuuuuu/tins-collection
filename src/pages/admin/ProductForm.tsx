@@ -17,7 +17,8 @@ const MAX_IMAGES = 5
 type Photo = { kind: 'stored'; path: string } | { kind: 'new'; file: File; preview: string }
 
 // `fixed` rows came from a size chip: their label isn't editable, only the stock.
-type SizeRow = VariantInput & { fixed?: boolean }
+// `priceText` is the size's own price as typed (only used with "Different price per size").
+type SizeRow = VariantInput & { fixed?: boolean; priceText?: string }
 
 const emptyVariant = (): SizeRow => ({ size: '', stock: 1 })
 
@@ -50,6 +51,8 @@ export default function ProductForm() {
   const [variants, setVariants] = useState<SizeRow[]>([])
   // Items without sizes (accessories) keep a single stock count instead of size rows.
   const [sized, setSized] = useState(true)
+  // Off: every size costs the item price. On: each size row gets its own price box.
+  const [sizePricing, setSizePricing] = useState(false)
   const [plainStock, setPlainStock] = useState(1)
   const [plainMeasurements, setPlainMeasurements] = useState('')
   const [plainId, setPlainId] = useState<string | undefined>(undefined)
@@ -83,7 +86,18 @@ export default function ProductForm() {
         setPlainMeasurements(p.product_variants[0].measurements)
         setPlainId(p.product_variants[0].id)
       } else {
-        setVariants(p.product_variants.map((v) => ({ id: v.id, size: v.size, stock: v.stock, measurements: v.measurements, fixed: presetIndex(v.size) !== -1 })))
+        setVariants(
+          p.product_variants.map((v) => ({
+            id: v.id,
+            size: v.size,
+            stock: v.stock,
+            measurements: v.measurements,
+            priceText: String(v.price ?? p.price),
+            fixed: presetIndex(v.size) !== -1,
+          })),
+        )
+        // Turn the switch on when any size already has its own price.
+        setSizePricing(p.product_variants.some((v) => v.price !== null && v.price !== p.price))
       }
       setPhotos(p.image_paths.map((path) => ({ kind: 'stored', path })))
       setOriginalPaths(p.image_paths)
@@ -151,7 +165,7 @@ export default function ProductForm() {
     setVariants((vs) =>
       vs.some((v) => presetIndex(v.size) === presetIndex(size))
         ? vs.filter((v) => presetIndex(v.size) !== presetIndex(size))
-        : orderSizes([...vs, { size, stock: 1, fixed: true }]),
+        : orderSizes([...vs, { size, stock: 1, fixed: true, priceText: price }]),
     )
 
   const updateVariant = (i: number, patch: Partial<VariantInput>) =>
@@ -169,7 +183,31 @@ export default function ProductForm() {
     if (sizes.some((s) => !s)) return 'Every size row needs a name (e.g. S, M, Free size)'
     if (new Set(sizes).size !== sizes.length) return 'Sizes must be unique'
     if (variants.some((v) => !Number.isInteger(v.stock) || v.stock < 0)) return 'Stock must be 0 or more'
+    if (sizePricing) {
+      const bad = variants.find((v) => {
+        const t = (v.priceText ?? '').trim()
+        return t !== '' && (Number.isNaN(Number(t)) || Number(t) < 0)
+      })
+      if (bad) return `Enter a valid price for size ${bad.size || '(unnamed)'}`
+    }
     return null
+  }
+
+  /**
+   * The price to save for a size: null means "same as the item", so a later change to the item
+   * price carries over. Only sizes with a different price store their own.
+   */
+  const savedSizePrice = (v: SizeRow): number | null => {
+    if (!sizePricing) return null
+    const t = (v.priceText ?? '').trim()
+    if (t === '' || Number(t) === Number(price)) return null
+    return Number(t)
+  }
+
+  const toggleSizePricing = (on: boolean) => {
+    setSizePricing(on)
+    // Start every empty price box at the item price, ready to adjust.
+    if (on) setVariants((vs) => vs.map((v) => ((v.priceText ?? '').trim() ? v : { ...v, priceText: price })))
   }
 
   const submit = async (e: FormEvent) => {
@@ -201,7 +239,7 @@ export default function ProductForm() {
         is_sold_out: soldOut,
         image_paths: paths,
         variants: sized
-          ? variants.map((v) => ({ ...v, stock: Number(v.stock) }))
+          ? variants.map((v) => ({ id: v.id, size: v.size, stock: Number(v.stock), measurements: v.measurements, price: savedSizePrice(v) }))
           : [{ id: plainId, size: NO_SIZE, stock: plainStock, measurements: plainMeasurements }],
       }
       if (id) await updateProduct(id, input)
@@ -234,7 +272,7 @@ export default function ProductForm() {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="label" htmlFor="price">Price (₱)</label>
+            <label className="label" htmlFor="price">{sizePricing && sized ? 'Default price (₱)' : 'Price (₱)'}</label>
             <input id="price" type="number" min={0} step="0.01" inputMode="decimal" className="input" value={price} onChange={(e) => setPrice(e.target.value)} required />
           </div>
           <div>
@@ -315,6 +353,20 @@ export default function ProductForm() {
         ) : (
           <>
             <p className="mt-4 text-sm text-muted">Tap the sizes you have, then set how many of each.</p>
+            <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-subtle px-3 py-2.5">
+              <span>
+                <span className="block text-sm font-medium">Different price per size</span>
+                <span className="block text-xs text-muted">
+                  {sizePricing ? 'Each size has its own price box below.' : 'Off: every size costs the price above.'}
+                </span>
+              </span>
+              {/* Switch */}
+              <span className="relative inline-flex shrink-0">
+                <input type="checkbox" role="switch" className="peer sr-only" checked={sizePricing} onChange={(e) => toggleSizePricing(e.target.checked)} />
+                <span className="h-6 w-11 rounded-full bg-line transition peer-checked:bg-brand peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand" />
+                <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+              </span>
+            </label>
             <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Common sizes">
               {PRESET_SIZES.map((size) => {
                 const on = hasSize(size)
@@ -339,7 +391,7 @@ export default function ProductForm() {
               })}
               <button
                 type="button"
-                onClick={() => setVariants((vs) => [...vs, emptyVariant()])}
+                onClick={() => setVariants((vs) => [...vs, { ...emptyVariant(), priceText: price }])}
                 className="flex min-h-10 items-center justify-center rounded-full border border-dashed border-line px-4 text-sm text-muted transition hover:border-brand hover:text-brand-ink"
               >
                 + Other size
@@ -364,14 +416,32 @@ export default function ProductForm() {
                     <CountStepper value={v.stock} onChange={(stock) => updateVariant(i, { stock })} label={v.size ? `size ${v.size}` : 'this size'} />
                     <button type="button" className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700 disabled:opacity-30" aria-label={`Remove size ${v.size}`} onClick={() => setVariants((vs) => vs.filter((_, j) => j !== i))}>✕</button>
                   </div>
-                  <input
-                    className="input h-9 text-xs"
-                    placeholder="Measurements (optional), e.g. Chest 36in, Length 26in"
-                    aria-label={`Measurements for size ${v.size || 'this size'}`}
-                    value={v.measurements ?? ''}
-                    maxLength={200}
-                    onChange={(e) => updateVariant(i, { measurements: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    {sizePricing && (
+                      <label className="relative w-28 shrink-0">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted">₱</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          inputMode="decimal"
+                          className="input h-9 pl-6 text-xs"
+                          placeholder={price || 'Price'}
+                          aria-label={`Price for size ${v.size || 'this size'}`}
+                          value={v.priceText ?? ''}
+                          onChange={(e) => setVariants((vs) => vs.map((x, j) => (j === i ? { ...x, priceText: e.target.value } : x)))}
+                        />
+                      </label>
+                    )}
+                    <input
+                      className="input h-9 min-w-0 flex-1 text-xs"
+                      placeholder={sizePricing ? 'Measurements (optional)' : 'Measurements (optional), e.g. Chest 36in, Length 26in'}
+                      aria-label={`Measurements for size ${v.size || 'this size'}`}
+                      value={v.measurements ?? ''}
+                      maxLength={200}
+                      onChange={(e) => updateVariant(i, { measurements: e.target.value })}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

@@ -8,12 +8,19 @@ import { ProductDetailSkeleton } from "../components/Skeletons";
 import SizePicker from "../components/SizePicker";
 import SoldOutBadge from "../components/SoldOutBadge";
 import Toast from "../components/Toast";
-import { formatPrice } from "../lib/format";
+import { formatPrice, formatPriceRange } from "../lib/format";
 import { imageUrl } from "../lib/images";
 import { flyToCart } from "../lib/flyToCart";
 import { fetchProduct } from "../lib/products";
 import type { Product, Variant } from "../lib/types";
-import { hasSizes, isSoldOut, sizeLabel } from "../lib/types";
+import {
+  hasSizePrices,
+  hasSizes,
+  isSoldOut,
+  priceRange,
+  sizeLabel,
+  sizePrice,
+} from "../lib/types";
 import { useCart } from "../store/cart";
 
 export default function ProductDetail() {
@@ -67,7 +74,7 @@ export default function ProductDetail() {
         name: product.name,
         size: variant.size,
         condition: product.condition,
-        price: product.price,
+        price: sizePrice(product, variant),
         qty,
         image: product.image_paths[0],
       },
@@ -157,9 +164,17 @@ export default function ProductDetail() {
           <h1 className="mt-3 font-display text-3xl leading-tight sm:text-4xl">
             {product.name}
           </h1>
-          <p className="mt-3 text-xl font-semibold">
-            {formatPrice(product.price)}
+          {/* The picked size's price; the full range until a size is picked (or when sold out). */}
+          <p className="mt-3 text-xl font-semibold" aria-live="polite">
+            {variant && !soldOut
+              ? formatPrice(sizePrice(product, variant))
+              : formatPriceRange(priceRange(product))}
           </p>
+          {hasSizePrices(product) && !soldOut && (
+            <p className="mt-1 text-xs text-muted">
+              Price depends on size: {formatPriceRange(priceRange(product))}
+            </p>
+          )}
           {product.description && (
             <p className="mt-5 whitespace-pre-line leading-relaxed text-muted">
               {product.description}

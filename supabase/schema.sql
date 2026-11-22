@@ -38,6 +38,10 @@ alter table public.product_variants
   add column if not exists measurements text not null default ''
   check (char_length(measurements) <= 200);
 
+-- Optional price per size. Empty means the size costs the item's price.
+alter table public.product_variants
+  add column if not exists price numeric(10,2) check (price >= 0);
+
 -- Sales the admin records after confirming an order in Messenger.
 -- Names, sizes and prices are copied in, so history stays readable after an item is edited or deleted.
 create table if not exists public.sales (

@@ -8,7 +8,11 @@ import { AdminListSkeleton, Bone } from "../../components/Skeletons";
 import SoldOutBadge from "../../components/SoldOutBadge";
 import StockStepper from "../../components/StockStepper";
 import Toast from "../../components/Toast";
-import { errorMessage, formatPrice } from "../../lib/format";
+import {
+  errorMessage,
+  formatPrice,
+  formatPriceRange,
+} from "../../lib/format";
 import { imageUrl } from "../../lib/images";
 import {
   purgeExpiredTrash,
@@ -34,9 +38,12 @@ import {
   CONDITION_LABEL,
   ITEM_TYPE_LABEL,
   STOCK_STATUS_LABEL,
+  hasSizePrices,
   isSoldOut,
   itemType,
+  priceRange,
   sizeLabel,
+  sizePrice,
   stockStatus,
   totalStock,
 } from "../../lib/types";
@@ -299,9 +306,11 @@ export default function Dashboard() {
   const available = products.filter((p) => !isSoldOut(p));
   // Only stock that can actually be bought: items marked sold out don't count.
   const unitsInStock = available.reduce((n, p) => n + totalStock(p), 0);
-  // What everything still for sale is worth at its listed price (price × units in stock).
+  // What everything still for sale is worth: each size's price × its stock.
   const inventoryValue = available.reduce(
-    (n, p) => n + p.price * totalStock(p),
+    (n, p) =>
+      n +
+      p.product_variants.reduce((m, v) => m + sizePrice(p, v) * v.stock, 0),
     0,
   );
   // Same "Only N left" threshold shoppers see on product cards.
@@ -500,7 +509,8 @@ export default function Dashboard() {
                       {isSoldOut(p) && <SoldOutBadge />}
                     </div>
                     <p className="text-sm text-muted">
-                      {formatPrice(p.price)} · {CONDITION_LABEL[p.condition]}
+                      {formatPriceRange(priceRange(p, true))} ·{" "}
+                      {CONDITION_LABEL[p.condition]}
                       {p.category &&
                         ` · ${matchCategory(p.category, allCategories)}`}{" "}
                       · {totalStock(p)} in stock
@@ -509,7 +519,12 @@ export default function Dashboard() {
                       {p.product_variants.map((v) => (
                         <StockStepper
                           key={v.id}
-                          size={sizeLabel(v.size) ?? "Stock"}
+                          // With per-size prices, each stepper shows its size's price too.
+                          size={
+                            hasSizePrices(p)
+                              ? `${sizeLabel(v.size) ?? "Stock"} · ${formatPrice(sizePrice(p, v))}`
+                              : (sizeLabel(v.size) ?? "Stock")
+                          }
                           stock={v.stock}
                           onCommit={(n) => changeStock(p, v.id, n)}
                         />

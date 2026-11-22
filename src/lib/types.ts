@@ -40,6 +40,8 @@ export interface Variant {
   sort_order: number
   /** Free text, e.g. "Chest 36in, Length 26in". Empty when not given. */
   measurements: string
+  /** This size's own price, or null to use the item's price. */
+  price: number | null
 }
 
 export interface Product {
@@ -63,6 +65,8 @@ export interface VariantInput {
   size: string
   stock: number
   measurements?: string
+  /** Leave out (or null) to use the item's price. */
+  price?: number | null
 }
 
 export interface ProductInput {
@@ -117,4 +121,25 @@ export interface Sale {
   category: string
   qty: number
   unit_price: number
+}
+
+/** What one size costs: its own price if it has one, otherwise the item's price. */
+export function sizePrice(p: Pick<Product, 'price'>, v: Pick<Variant, 'price'>): number {
+  return v.price ?? p.price
+}
+
+/** True when the item's sizes don't all cost the same. */
+export function hasSizePrices(p: Product): boolean {
+  return new Set(p.product_variants.map((v) => sizePrice(p, v))).size > 1
+}
+
+/**
+ * Lowest and highest price. By default over sizes a shopper can still buy (every size when the
+ * item is sold out); pass `allSizes` for the admin, who sees out-of-stock sizes too.
+ */
+export function priceRange(p: Product, allSizes = false): { min: number; max: number } {
+  const inStock = p.product_variants.filter((v) => v.stock > 0)
+  const sizes = !allSizes && inStock.length > 0 ? inStock : p.product_variants
+  const prices = sizes.length > 0 ? sizes.map((v) => sizePrice(p, v)) : [p.price]
+  return { min: Math.min(...prices), max: Math.max(...prices) }
 }

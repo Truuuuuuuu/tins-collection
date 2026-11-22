@@ -9,7 +9,7 @@ import SortMenu from "../components/SortMenu";
 import { ProductGridSkeleton } from "../components/Skeletons";
 import type { Condition } from "../lib/types";
 import type { ItemType } from "../lib/types";
-import { CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType } from "../lib/types";
+import { CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType, priceRange } from "../lib/types";
 import { categoryKey, categoryOptions } from "../lib/categories";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { usePagination } from "../lib/usePagination";
@@ -72,8 +72,9 @@ export default function Catalog() {
         .sort(
           (a, b) =>
             Number(isSoldOut(a)) - Number(isSoldOut(b)) ||
-            (sort === "price-asc" ? a.price - b.price : 0) ||
-            (sort === "price-desc" ? b.price - a.price : 0),
+            // Items with several prices: low-to-high uses their lowest price, high-to-low their highest.
+            (sort === "price-asc" ? priceRange(a).min - priceRange(b).min : 0) ||
+            (sort === "price-desc" ? priceRange(b).max - priceRange(a).max : 0),
         )
     );
   }, [products, query, types, categories, condition, hideSoldOut, sort]);

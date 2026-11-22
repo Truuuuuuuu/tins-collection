@@ -12,7 +12,7 @@ function normalize(p: Product): Product {
     condition: p.condition === 'preloved' ? 'preloved' : 'new',
     deleted_at: p.deleted_at ?? null,
     product_variants: [...p.product_variants]
-      .map((v) => ({ ...v, measurements: v.measurements ?? '' }))
+      .map((v) => ({ ...v, measurements: v.measurements ?? '', price: v.price == null ? null : Number(v.price) }))
       .sort((a, b) => a.sort_order - b.sort_order),
   }
 }
@@ -68,6 +68,7 @@ async function syncVariants(productId: string, input: ProductInput): Promise<voi
     size: v.size.trim(),
     stock: v.stock,
     measurements: (v.measurements ?? '').trim(),
+    price: v.price ?? null,
     sort_order: i,
   }))
   const updates = rows.filter((r) => 'id' in r)

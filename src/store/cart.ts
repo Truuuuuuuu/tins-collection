@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Condition, Product } from '../lib/types'
-import { isSoldOut, sizeLabel } from '../lib/types'
+import { isSoldOut, sizeLabel, sizePrice } from '../lib/types'
 
 export interface CartLine {
   productId: string
@@ -56,7 +56,8 @@ export const useCart = create<CartState>()(
             changed.push(`${label} is no longer available`)
             continue
           }
-          let updated = { ...line, price: product.price, name: product.name, size: variant.size }
+          // Keep the cart on the size's current price (sizes can cost different amounts).
+          let updated = { ...line, price: sizePrice(product, variant), name: product.name, size: variant.size }
           if (line.qty > variant.stock) {
             changed.push(`${label} reduced to ${variant.stock}, the stock left`)
             updated = { ...updated, qty: variant.stock }

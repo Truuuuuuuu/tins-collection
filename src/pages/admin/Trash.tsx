@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import Pagination from '../../components/Pagination'
 import { AdminListSkeleton } from '../../components/Skeletons'
 import Toast from '../../components/Toast'
-import { errorMessage, formatPrice } from '../../lib/format'
+import { errorMessage, formatPriceRange } from '../../lib/format'
 import { imageUrl } from '../../lib/images'
 import { deleteProductForever, fetchDeletedProducts, purgeExpiredTrash, restoreProduct, TRASH_DAYS } from '../../lib/products'
 import type { Product } from '../../lib/types'
+import { priceRange } from '../../lib/types'
 import { usePagination } from '../../lib/usePagination'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -74,7 +75,7 @@ export default function Trash() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <h2 className="truncate font-medium">{p.name}</h2>
-                  <p className="text-sm text-muted">{formatPrice(p.price)}{p.category && ` · ${p.category}`}</p>
+                  <p className="text-sm text-muted">{formatPriceRange(priceRange(p, true))}{p.category && ` · ${p.category}`}</p>
                   <p className={`mt-1 text-xs ${left <= 1 ? 'font-medium text-red-700' : 'text-muted'}`}>
                     {left === 0 ? 'Removed for good today' : `Removed for good in ${left} day${left === 1 ? '' : 's'}`}
                   </p>

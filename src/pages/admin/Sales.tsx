@@ -8,7 +8,7 @@ import Toast from '../../components/Toast'
 import { errorMessage, formatPrice } from '../../lib/format'
 import { fetchSales, parseOrderCode, recordSale, saleTotal, startOfMonth, undoSale } from '../../lib/sales'
 import type { Product, Sale } from '../../lib/types'
-import { sizeLabel } from '../../lib/types'
+import { sizeLabel, sizePrice } from '../../lib/types'
 import { usePagination } from '../../lib/usePagination'
 import { useProducts } from '../../lib/useProducts'
 
@@ -306,7 +306,8 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
     setLines((ls) => {
       const existing = ls.find((l) => l.variantId === variantId)
       if (existing) return ls.map((l) => (l.variantId === variantId ? { ...l, qty: l.qty + qty } : l))
-      return [...ls, { product, variantId, qty, price: String(product.price) }]
+      const v = product.product_variants.find((x) => x.id === variantId)
+      return [...ls, { product, variantId, qty, price: String(v ? sizePrice(product, v) : product.price) }]
     })
 
   const applyPaste = (text: string) => {
@@ -317,7 +318,12 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
       return
     }
     setCode(parsed.code)
-    setLines(parsed.lines.map((l) => ({ product: l.product, variantId: l.variantId, qty: l.qty, price: String(l.product.price) })))
+    setLines(
+      parsed.lines.map((l) => {
+        const v = l.product.product_variants.find((x) => x.id === l.variantId)
+        return { product: l.product, variantId: l.variantId, qty: l.qty, price: String(v ? sizePrice(l.product, v) : l.product.price) }
+      }),
+    )
     setNotice(
       parsed.missing > 0
         ? `Filled in ${plural(parsed.lines.length, 'item')}. ${plural(parsed.missing, 'item')} from this order no longer ${parsed.missing === 1 ? 'exists' : 'exist'}.`
@@ -329,7 +335,11 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
   const options = products.flatMap((p) =>
     p.product_variants
       .filter((v) => v.stock > 0)
-      .map((v) => ({ value: v.id, product: p, label: `${p.name}${sizeLabel(v.size) ? ` — ${v.size}` : ''} (${v.stock} left)` })),
+      .map((v) => ({
+        value: v.id,
+        product: p,
+        label: `${p.name}${sizeLabel(v.size) ? ` — ${v.size}` : ''} · ${formatPrice(sizePrice(p, v))} (${v.stock} left)`,
+      })),
   )
 
   const problems = lines

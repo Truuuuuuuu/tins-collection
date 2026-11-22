@@ -11,6 +11,11 @@ export function formatPrice(amount: number): string {
   return peso.format(amount)
 }
 
+/** "₱240" when both ends match, otherwise "₱240 – ₱280". */
+export function formatPriceRange({ min, max }: { min: number; max: number }): string {
+  return min === max ? peso.format(min) : `${peso.format(min)} – ${peso.format(max)}`
+}
+
 /** Supabase errors are plain objects with a message, not Error instances. */
 export function errorMessage(e: unknown, fallback: string): string {
   if (e && typeof e === 'object' && 'message' in e && typeof e.message === 'string' && e.message) return e.message
