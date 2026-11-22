@@ -40,3 +40,42 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 @utility btn-danger { @apply btn border border-red-200 bg-surface text-red-700 hover:bg-red-50; }
 @utility input { @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none transition placeholder:text-muted/70 focus:border-brand focus:ring-3 focus:ring-brand/15; }
 @utility label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-muted; }
+
+/* ---------- First-launch intro (SplashIntro.tsx) ---------- */
+.splash-glow {
+  background: radial-gradient(60% 45% at 50% 50%, var(--color-brand-soft), transparent 70%);
+  opacity: 0;
+}
+.splash-script { clip-path: inset(0 100% 0 0); filter: blur(6px); }
+.splash-letter { transform: translateY(110%); opacity: 0; }
+.splash-line { transform: scaleX(0); }
+
+.splash[data-phase="play"] .splash-glow,
+.splash[data-phase="exit"] .splash-glow { animation: splash-fade 1.4s ease-out forwards; }
+.splash[data-phase="play"] .splash-script,
+.splash[data-phase="exit"] .splash-script { animation: splash-write 1s cubic-bezier(.65,0,.35,1) .1s forwards; }
+.splash[data-phase="play"] .splash-letter,
+.splash[data-phase="exit"] .splash-letter { animation: splash-rise .7s cubic-bezier(.16,1,.3,1) calc(.55s + var(--i) * 35ms) forwards; }
+.splash[data-phase="play"] .splash-line,
+.splash[data-phase="exit"] .splash-line { animation: splash-draw .8s cubic-bezier(.16,1,.3,1) 1s forwards; }
+
+.splash[data-phase="exit"] { animation: splash-wipe .8s cubic-bezier(.76,0,.24,1) forwards; }
+.splash[data-phase="exit"] .splash-mark { animation: splash-recede .6s cubic-bezier(.76,0,.24,1) forwards; }
+
+@keyframes splash-fade { to { opacity: 1; } }
+@keyframes splash-write { to { clip-path: inset(0 0 0 0); filter: blur(0); } }
+@keyframes splash-rise { to { transform: translateY(0); opacity: 1; } }
+@keyframes splash-draw { to { transform: scaleX(1); } }
+@keyframes splash-wipe { to { clip-path: inset(0 0 100% 0); } }
+@keyframes splash-recede { to { transform: translateY(-24px) scale(.96); opacity: 0; filter: blur(4px); } }
+
+/* Page content settles in as the intro lifts. */
+html:has(.splash[data-phase="exit"]) main { animation: splash-page .9s cubic-bezier(.16,1,.3,1) .15s both; }
+@keyframes splash-page { from { transform: translateY(16px); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .splash *, .splash { animation-duration: .01ms !important; animation-delay: 0s !important; }
+  .splash[data-phase="exit"] { animation: splash-fade-out .3s ease forwards !important; }
+  html:has(.splash) main { animation: none !important; }
+  @keyframes splash-fade-out { to { opacity: 0; } }
+}
