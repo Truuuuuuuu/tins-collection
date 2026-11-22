@@ -2,9 +2,9 @@ import type { Condition } from '../lib/types'
 import { CONDITION_LABEL } from '../lib/types'
 
 const STYLE: Record<Condition, string> = {
-  // Green text on pale green: 5.5:1 contrast. Pink text on pale pink: 4.9:1.
-  new: 'border-emerald-600/30 bg-emerald-50 text-emerald-700',
-  preloved: 'border-brand/30 bg-brand-soft text-brand-ink',
+  // Solid badges with white text. Dark green keeps 5.5:1 contrast (lighter greens fall below 4.5:1); brand pink 4.6:1.
+  new: 'border-transparent bg-emerald-700 text-white',
+  preloved: 'border-transparent bg-brand text-white',
 }
 
 export default function ConditionBadge({ condition, className = '' }: { condition: Condition; className?: string }) {

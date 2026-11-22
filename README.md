@@ -66,7 +66,6 @@ If it ever pauses anyway, click **Restore** in the Supabase dashboard.
 | Condition | Every item is **Brand new** or **Pre-loved**, chosen in the item form. Shoppers can filter by it, and pre-loved items are labelled in the cart and the Messenger order. |
 | Sold out | Shown when the admin ticks "sold out" **or** every size is at 0. |
 | Sorting | Shoppers can sort by newest or by price. Sold-out items always sink to the bottom. |
-| Just in | Items added in the last 7 days get a **Just in** badge. |
 | Measurements | Optional per size (e.g. "Chest 36in, Length 26in"), shown when the shopper picks that size. Accessories get one measurements field. |
 | Deleting | Moves the item to **Recently deleted**, hidden from the shop. You can restore it for 7 days. After that it's removed for good, sizes and photos included, the next time you open the admin. |
 | Bulk actions | Tick items in the admin list to mark them sold out or available, change their category, or delete them together. |

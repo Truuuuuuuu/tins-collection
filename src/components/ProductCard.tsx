@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { formatPrice } from '../lib/format'
 import { imageUrl } from '../lib/images'
 import type { Product } from '../lib/types'
-import { hasSizes, isNewArrival, isSoldOut, priceRange, totalStock } from '../lib/types'
+import { hasSizes, isSoldOut, priceRange, totalStock } from '../lib/types'
 import ConditionBadge from './ConditionBadge'
 import SoldOutBadge from './SoldOutBadge'
 
@@ -29,11 +29,6 @@ export default function ProductCard({ product }: { product: Product }) {
             <SoldOutBadge />
           ) : (
             <ConditionBadge condition={product.condition} className="shadow-sm" />
-          )}
-          {!soldOut && isNewArrival(product) && (
-            <span className="inline-flex items-center rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-white shadow-sm">
-              Just in
-            </span>
           )}
         </div>
       </div>

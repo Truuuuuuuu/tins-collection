@@ -103,13 +103,6 @@ export function stockStatus(p: Product): StockStatus {
   return totalStock(p) <= 3 ? 'low' : 'in-stock'
 }
 
-/** Items added in the last week get a "Just in" badge. */
-export const NEW_ARRIVAL_DAYS = 7
-
-export function isNewArrival(p: Pick<Product, 'created_at'>, now = Date.now()): boolean {
-  return now - new Date(p.created_at).getTime() < NEW_ARRIVAL_DAYS * 24 * 60 * 60 * 1000
-}
-
 export interface Sale {
   id: string
   sold_at: string
