@@ -1,4 +1,4 @@
-// Runs once a day via the Vercel cron in vercel.json. Supabase's free plan pauses a project after
+// Runs every 3 days via the Vercel cron in vercel.json. Supabase's free plan pauses a project after
 // about a week with no activity, so this asks for one item to keep it awake. Read-only: it changes nothing.
 export async function GET(request) {
   // If CRON_SECRET is set in Vercel, only Vercel's cron (which sends it) may call this.
