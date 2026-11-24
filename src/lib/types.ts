@@ -17,7 +17,7 @@ export function sizeLabel(size: string): string | null {
 }
 
 export function hasSizes(variants: Pick<Variant, 'size'>[]): boolean {
-  return !(variants.length === 1 && variants[0].size === NO_SIZE)
+  return !(variants.length > 0 && variants.every((v) => v.size === NO_SIZE))
 }
 
 export type Audience = 'men' | 'women' | 'kids'
@@ -48,9 +48,23 @@ export function itemType(p: Pick<Product, 'product_variants'>): ItemType {
   return hasSizes(p.product_variants) ? 'clothing' : 'accessories'
 }
 
+/** A color an item comes in. Each color keeps its own stock (one row per size, or one for accessories). */
+export interface Color {
+  id: string
+  product_id: string
+  name: string
+  /** Swatch color like "#1f2937", or null for a custom color without one. */
+  hex: string | null
+  /** The item's photos that show this color. Empty means none of its own. */
+  image_paths: string[]
+  sort_order: number
+}
+
 export interface Variant {
   id: string
   product_id: string
+  /** The color this stock belongs to, or null when the item has no colors. */
+  color_id: string | null
   size: string
   stock: number
   sort_order: number
@@ -76,10 +90,14 @@ export interface Product {
   /** Set when the item is in "Recently deleted". */
   deleted_at: string | null
   product_variants: Variant[]
+  /** Empty when the item doesn't come in colors. */
+  product_colors: Color[]
 }
 
 export interface VariantInput {
   id?: string
+  /** Which entry of ProductInput.colors this stock belongs to (its index), or null without colors. */
+  colorIndex?: number | null
   size: string
   stock: number
   measurements?: string
@@ -96,7 +114,36 @@ export interface ProductInput {
   condition: Condition
   image_paths: string[]
   is_sold_out: boolean
+  /** Empty for items without colors. */
+  colors: ColorInput[]
   variants: VariantInput[]
+}
+
+export interface ColorInput {
+  id?: string
+  name: string
+  hex: string | null
+  image_paths: string[]
+}
+
+/** The color a stock row belongs to, if any. */
+export function colorOf(p: Pick<Product, 'product_colors'>, v: Pick<Variant, 'color_id'>): Color | null {
+  return v.color_id ? (p.product_colors.find((c) => c.id === v.color_id) ?? null) : null
+}
+
+/** What a shopper picked, e.g. "Beige, M", "Beige" or "M". Null for one-size items without colors. */
+export function optionLabel(color: string | null | undefined, size: string): string | null {
+  return [color || null, sizeLabel(size)].filter(Boolean).join(', ') || null
+}
+
+/** optionLabel for a stock row of an item. */
+export function variantLabel(p: Pick<Product, 'product_colors'>, v: Pick<Variant, 'color_id' | 'size'>): string | null {
+  return optionLabel(colorOf(p, v)?.name, v.size)
+}
+
+/** Stock left in one color, across its sizes. */
+export function colorStock(p: Pick<Product, 'product_variants'>, colorId: string): number {
+  return p.product_variants.filter((v) => v.color_id === colorId).reduce((n, v) => n + v.stock, 0)
 }
 
 export function totalStock(p: Product): number {
@@ -130,6 +177,8 @@ export interface Sale {
   variant_id: string | null
   product_name: string
   size: string
+  /** Empty for items without colors. */
+  color: string
   category: string
   qty: number
   unit_price: number

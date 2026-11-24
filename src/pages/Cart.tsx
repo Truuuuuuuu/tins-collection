@@ -14,7 +14,7 @@ import {
 } from "../lib/messenger";
 import { fetchProducts } from "../lib/products";
 import type { Product } from "../lib/types";
-import { sizeLabel } from "../lib/types";
+import { optionLabel } from "../lib/types";
 import { cartTotal, useCart } from "../store/cart";
 
 export default function Cart() {
@@ -140,7 +140,7 @@ export default function Cart() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{l.name}</p>
                   <p className="text-sm text-muted">
-                    {[sizeLabel(l.size), l.condition === "preloved" ? "Pre-loved" : null]
+                    {[optionLabel(l.color, l.size), l.condition === "preloved" ? "Pre-loved" : null]
                       .filter(Boolean)
                       .map((x) => `${x} · `)}
                     <Price amount={l.price} />

@@ -10,7 +10,7 @@ import { errorMessage, formatPrice } from '../../lib/format'
 import { imageUrl } from '../../lib/images'
 import { fetchSales, parseOrderCode, recordSale, saleTotal, startOfMonth, undoSale } from '../../lib/sales'
 import type { Product, Sale } from '../../lib/types'
-import { sizeLabel, sizePrice } from '../../lib/types'
+import { optionLabel, sizePrice, variantLabel } from '../../lib/types'
 import { usePagination } from '../../lib/usePagination'
 import { useProducts } from '../../lib/useProducts'
 
@@ -213,7 +213,7 @@ export default function Sales() {
                           <div className="min-w-0 flex-1">
                             <p className="truncate font-medium">
                               {s.product_name}
-                              {sizeLabel(s.size) && <span className="font-normal text-muted"> · {s.size}</span>}
+                              {optionLabel(s.color, s.size) && <span className="font-normal text-muted"> · {optionLabel(s.color, s.size)}</span>}
                             </p>
                             <p className="text-xs text-muted">
                               {timeFormat.format(new Date(s.sold_at))} · {s.qty} × {formatPrice(s.unit_price)}
@@ -258,13 +258,13 @@ export default function Sales() {
           <p>
             <strong className="text-ink">
               {confirmUndo.product_name}
-              {sizeLabel(confirmUndo.size) ? ` (${confirmUndo.size})` : ''}
+              {optionLabel(confirmUndo.color, confirmUndo.size) ? ` (${optionLabel(confirmUndo.color, confirmUndo.size)})` : ''}
             </strong>
             {' '}· {confirmUndo.qty} × {formatPrice(confirmUndo.unit_price)} = {formatPrice(confirmUndo.qty * confirmUndo.unit_price)}
           </p>
           <p className="mt-2">
             The sale is removed from your history and {plural(confirmUndo.qty, 'piece')} {confirmUndo.qty === 1 ? 'goes' : 'go'} back into stock.
-            {!confirmUndo.variant_id && ' This size no longer exists, so no stock is put back.'}
+            {!confirmUndo.variant_id && ` This ${confirmUndo.color ? 'color or size' : 'size'} no longer exists, so no stock is put back.`}
           </p>
         </ConfirmSheet>
       )}
@@ -345,7 +345,8 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
   const problems = lines
     .map((l) => {
       const v = variantOf(l)
-      const label = `${l.product.name}${v && sizeLabel(v.size) ? ` (${v.size})` : ''}`
+      const option = v ? variantLabel(l.product, v) : null
+      const label = `${l.product.name}${option ? ` (${option})` : ''}`
       if (!v) return `${label} no longer exists`
       if (l.qty > v.stock) return `Only ${v.stock} left of ${label}`
       if (l.price === '' || Number.isNaN(Number(l.price)) || Number(l.price) < 0) return `Enter a valid price for ${label}`
@@ -401,7 +402,7 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
                 <div className="min-w-0 flex-1 basis-full sm:basis-auto">
                   <p className="truncate text-sm font-medium">{l.product.name}</p>
                   <p className="text-xs text-muted">
-                    {v && sizeLabel(v.size) ? `Size ${v.size} · ` : ''}
+                    {v && variantLabel(l.product, v) ? `${variantLabel(l.product, v)} · ` : ''}
                     {v ? `${v.stock} in stock` : 'No longer exists'}
                   </p>
                 </div>
@@ -465,7 +466,7 @@ function RecordSale({ products, onCancel, onSaved }: { products: Product[]; onCa
                 <li key={l.variantId} className="flex items-center justify-between gap-3 px-3 py-2">
                   <span className="min-w-0 truncate text-ink">
                     {l.product.name}
-                    {v && sizeLabel(v.size) ? <span className="text-muted"> · {v.size}</span> : null}
+                    {v && variantLabel(l.product, v) ? <span className="text-muted"> · {variantLabel(l.product, v)}</span> : null}
                   </span>
                   <span className="shrink-0 tabular-nums">{l.qty} × {formatPrice(Number(l.price))}</span>
                 </li>
@@ -498,7 +499,7 @@ function ItemPicker({
   const q = query.trim().toLowerCase()
   const inStock = useMemo(() => products.filter((p) => p.product_variants.some((v) => v.stock > 0)), [products])
   const results = q
-    ? inStock.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.product_variants.some((v) => v.size.toLowerCase() === q))
+    ? inStock.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.product_variants.some((v) => v.size.toLowerCase() === q) || p.product_colors.some((c) => c.name.toLowerCase() === q))
     : []
   const shown = results.slice(0, 30)
 
@@ -555,19 +556,19 @@ function ItemPicker({
                         .map((v) => {
                           const added = inSale[v.id] ?? 0
                           const full = added >= v.stock
-                          const size = sizeLabel(v.size)
+                          const size = variantLabel(p, v)
                           return (
                             <button
                               key={v.id}
                               type="button"
                               disabled={full}
                               onClick={() => onAdd(p, v.id)}
-                              aria-label={`Add ${p.name}${size ? `, size ${v.size}` : ''}, ${formatPrice(sizePrice(p, v))}, ${v.stock} left${added ? `, ${added} in this sale` : ''}`}
+                              aria-label={`Add ${p.name}${size ? `, ${size}` : ''}, ${formatPrice(sizePrice(p, v))}, ${v.stock} left${added ? `, ${added} in this sale` : ''}`}
                               className={`flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${
                                 added ? 'border-brand bg-brand-soft text-brand-ink' : 'border-line hover:border-brand'
                               }`}
                             >
-                              <span className="font-medium">{size ? v.size : 'Add'}</span>
+                              <span className="font-medium">{size ?? 'Add'}</span>
                               <span className="tabular-nums text-muted">{formatPrice(sizePrice(p, v))}</span>
                               <span className="tabular-nums text-muted">· {full ? 'all added' : `${v.stock - added} left`}</span>
                             </button>

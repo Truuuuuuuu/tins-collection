@@ -7,21 +7,40 @@ import { createProduct, fetchProduct, fetchProducts, updateProduct } from '../..
 import type { CategoryOption } from '../../lib/categories'
 import { categoryOptions, matchCategory } from '../../lib/categories'
 import BackButton from '../../components/BackButton'
+import ColorSwatch from '../../components/ColorSwatch'
 import CountStepper from '../../components/CountStepper'
 import { ProductFormSkeleton } from '../../components/Skeletons'
+import { PRESET_COLORS, presetColor } from '../../lib/colors'
 import { AUDIENCE_LABEL, AUDIENCES, CONDITION_LABEL, hasSizes, NO_SIZE } from '../../lib/types'
 import type { Audience, Condition, VariantInput } from '../../lib/types'
 
 const MAX_IMAGES = 5
 
 // A photo is either already in storage (path) or picked but not uploaded yet (file).
-type Photo = { kind: 'stored'; path: string } | { kind: 'new'; file: File; preview: string }
+// `colorKey` tags it with one of the item's colors, so shoppers see it when they pick that color.
+type Photo = ({ kind: 'stored'; path: string } | { kind: 'new'; file: File; preview: string }) & { colorKey?: string }
 
+// `key` identifies a row while editing (stock per color is stored against it).
 // `fixed` rows came from a size chip: their label isn't editable, only the stock.
 // `priceText` is the size's own price as typed (only used with "Different price per size").
-type SizeRow = VariantInput & { fixed?: boolean; priceText?: string }
+type SizeRow = VariantInput & { key: string; fixed?: boolean; priceText?: string }
 
-const emptyVariant = (): SizeRow => ({ size: '', stock: 1 })
+// A color while editing. `custom` colors were typed in, so their name and swatch can be changed.
+type ColorRow = { key: string; id?: string; name: string; hex: string | null; custom?: boolean }
+
+// The stock of one size in one color. `id` is the saved stock row, when there is one.
+type Cell = { id?: string; stock: number }
+
+let keySeq = 0
+const newKey = () => `k${++keySeq}`
+
+/** Accessories have no size rows; their per-color stock is stored under this size key. */
+const PLAIN = 'plain'
+const cellKey = (colorKey: string, sizeKey: string) => `${colorKey}|${sizeKey}`
+/** New sizes and colors start at 1 of each, like a new size does without colors. */
+const DEFAULT_CELL: Cell = { stock: 1 }
+
+const emptyVariant = (): SizeRow => ({ key: newKey(), size: '', stock: 1 })
 
 // Common sizes the admin can tap instead of typing. Order here is the order shoppers see.
 const PRESET_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free size']
@@ -59,6 +78,10 @@ export default function ProductForm() {
   const [plainStock, setPlainStock] = useState(1)
   const [plainMeasurements, setPlainMeasurements] = useState('')
   const [plainId, setPlainId] = useState<string | undefined>(undefined)
+  // Colors are optional. With colors, every size (or the single accessory stock) is counted per color.
+  const [colors, setColors] = useState<ColorRow[]>([])
+  const [cells, setCells] = useState<Record<string, Cell>>({})
+  const [customColor, setCustomColor] = useState('')
   const [photos, setPhotos] = useState<Photo[]>([])
   const [originalPaths, setOriginalPaths] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -88,26 +111,52 @@ export default function ProductForm() {
       setAudiences(p.audiences)
       setCondition(p.condition)
       setSoldOut(p.is_sold_out)
+      setColors(p.product_colors.map((c) => ({ key: c.id, id: c.id, name: c.name, hex: c.hex, custom: !presetColor(c.name) })))
+      const loaded: Record<string, Cell> = {}
       if (p.product_variants.length && !hasSizes(p.product_variants)) {
         setSized(false)
-        setPlainStock(p.product_variants[0].stock)
         setPlainMeasurements(p.product_variants[0].measurements)
-        setPlainId(p.product_variants[0].id)
+        for (const v of p.product_variants) {
+          if (v.color_id) loaded[cellKey(v.color_id, PLAIN)] = { id: v.id, stock: v.stock }
+          else {
+            setPlainStock(v.stock)
+            setPlainId(v.id)
+          }
+        }
+        for (const c of p.product_colors) loaded[cellKey(c.id, PLAIN)] ??= { stock: 0 }
       } else {
-        setVariants(
-          p.product_variants.map((v) => ({
-            id: v.id,
-            size: v.size,
-            stock: v.stock,
-            measurements: v.measurements,
-            priceText: String(v.price ?? p.price),
-            fixed: presetIndex(v.size) !== -1,
-          })),
-        )
+        // With colors there's a stock row per color and size; the size list is each size once.
+        const rows: SizeRow[] = []
+        for (const v of p.product_variants) {
+          let row = rows.find((r) => r.size === v.size)
+          if (!row) {
+            row = {
+              key: newKey(),
+              size: v.size,
+              stock: 1,
+              measurements: v.measurements,
+              priceText: String(v.price ?? p.price),
+              fixed: presetIndex(v.size) !== -1,
+            }
+            rows.push(row)
+          }
+          if (v.color_id) loaded[cellKey(v.color_id, row.key)] = { id: v.id, stock: v.stock }
+          else Object.assign(row, { id: v.id, stock: v.stock })
+        }
+        // A size missing from a color counts as none of that color.
+        for (const c of p.product_colors) for (const r of rows) loaded[cellKey(c.id, r.key)] ??= { stock: 0 }
+        setVariants(rows)
         // Turn the switch on when any size already has its own price.
         setSizePricing(p.product_variants.some((v) => v.price !== null && v.price !== p.price))
       }
-      setPhotos(p.image_paths.map((path) => ({ kind: 'stored', path })))
+      setCells(loaded)
+      setPhotos(
+        p.image_paths.map((path) => ({
+          kind: 'stored',
+          path,
+          colorKey: p.product_colors.find((c) => c.image_paths.includes(path))?.id,
+        })),
+      )
       setOriginalPaths(p.image_paths)
       setLoading(false)
     })
@@ -183,8 +232,56 @@ export default function ProductForm() {
     setVariants((vs) =>
       vs.some((v) => presetIndex(v.size) === presetIndex(size))
         ? vs.filter((v) => presetIndex(v.size) !== presetIndex(size))
-        : orderSizes([...vs, { size, stock: 1, fixed: true, priceText: price }]),
+        : orderSizes([...vs, { key: newKey(), size, stock: 1, fixed: true, priceText: price }]),
     )
+
+  // ---- Colors ----
+  const cellOf = (colorKey: string, sizeKey: string): Cell => cells[cellKey(colorKey, sizeKey)] ?? DEFAULT_CELL
+  const setCellStock = (colorKey: string, sizeKey: string, stock: number) =>
+    setCells((cs) => ({ ...cs, [cellKey(colorKey, sizeKey)]: { ...(cs[cellKey(colorKey, sizeKey)] ?? DEFAULT_CELL), stock } }))
+  const hasColor = (name: string) => colors.some((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())
+
+  const addColor = (name: string, hex: string | null, custom = false) => {
+    const key = newKey()
+    if (colors.length === 0) {
+      // The first color takes over the stock counted so far (and its saved rows).
+      const carried: Record<string, Cell> = { [cellKey(key, PLAIN)]: { id: plainId, stock: plainStock } }
+      for (const v of variants) carried[cellKey(key, v.key)] = { id: v.id, stock: v.stock }
+      setCells((cs) => ({ ...cs, ...carried }))
+      setVariants((vs) => vs.map((v) => ({ ...v, id: undefined })))
+      setPlainId(undefined)
+    }
+    setColors((cs) => [...cs, { key, name, hex, custom }])
+  }
+
+  const removeColor = (key: string) => {
+    if (colors.length === 1) {
+      // Back to no colors: keep the last color's counts as the item's stock.
+      setVariants((vs) => vs.map((v) => ({ ...v, stock: cellOf(key, v.key).stock })))
+      setPlainStock(cellOf(key, PLAIN).stock)
+    }
+    setColors((cs) => cs.filter((c) => c.key !== key))
+    setPhotos((ps) => ps.map((p) => (p.colorKey === key ? { ...p, colorKey: undefined } : p)))
+  }
+
+  const togglePresetColor = (preset: { name: string; hex: string }) => {
+    const existing = colors.find((c) => c.name.trim().toLowerCase() === preset.name.toLowerCase())
+    if (existing) removeColor(existing.key)
+    else addColor(preset.name, preset.hex)
+  }
+
+  const addCustomColor = () => {
+    const name = customColor.trim()
+    if (!name) return
+    if (hasColor(name)) return setError(`"${name}" is already added`)
+    const preset = presetColor(name)
+    addColor(preset?.name ?? name, preset?.hex ?? null, !preset)
+    setCustomColor('')
+    setError(null)
+  }
+
+  const updateColor = (key: string, patch: Partial<ColorRow>) =>
+    setColors((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)))
 
   const updateVariant = (i: number, patch: Partial<VariantInput>) =>
     setVariants((vs) => vs.map((v, j) => (j === i ? { ...v, ...patch } : v)))
@@ -193,6 +290,10 @@ export default function ProductForm() {
     if (!name.trim()) return 'Name is required'
     const n = Number(price)
     if (!price || Number.isNaN(n) || n < 0) return 'Enter a valid price'
+    const colorNames = colors.map((c) => c.name.trim().toLowerCase())
+    if (colorNames.some((c) => !c)) return 'Every color needs a name'
+    if (colorNames.some((c) => c.length > 40)) return 'Color names can be up to 40 characters'
+    if (new Set(colorNames).size !== colorNames.length) return 'Colors must be unique'
     if (!sized) return plainStock >= 0 && Number.isInteger(plainStock) ? null : 'Stock must be 0 or more'
     if (variants.length === 0) return 'Add at least one size, or choose "Accessories"'
     if (variants.some((v) => v.size.trim().toLowerCase() === NO_SIZE.toLowerCase()))
@@ -258,6 +359,12 @@ export default function ProductForm() {
           })
         }
       }
+      // Which saved photo paths show each color.
+      const colorPhotos = (key: string) => paths.filter((_, i) => photos[i].colorKey === key)
+      const sizeRows: SizeRow[] = sized
+        ? variants
+        : [{ key: PLAIN, id: plainId, size: NO_SIZE, stock: plainStock, measurements: plainMeasurements }]
+      const sizePriceOf = (v: SizeRow) => (sized ? savedSizePrice(v) : null)
       const input = {
         name,
         description,
@@ -267,9 +374,17 @@ export default function ProductForm() {
         condition,
         is_sold_out: soldOut,
         image_paths: paths,
-        variants: sized
-          ? variants.map((v) => ({ id: v.id, size: v.size, stock: Number(v.stock), measurements: v.measurements, price: savedSizePrice(v) }))
-          : [{ id: plainId, size: NO_SIZE, stock: plainStock, measurements: plainMeasurements }],
+        colors: colors.map((c) => ({ id: c.id, name: c.name.trim(), hex: c.hex, image_paths: colorPhotos(c.key) })),
+        // Without colors: one stock row per size. With colors: one per size within each color.
+        variants:
+          colors.length === 0
+            ? sizeRows.map((v) => ({ id: v.id, colorIndex: null, size: v.size, stock: Number(v.stock), measurements: v.measurements, price: sizePriceOf(v) }))
+            : colors.flatMap((c, ci) =>
+                sizeRows.map((v) => {
+                  const cell = cellOf(c.key, v.key)
+                  return { id: cell.id, colorIndex: ci, size: v.size, stock: Number(cell.stock), measurements: v.measurements, price: sizePriceOf(v) }
+                }),
+              ),
       }
       if (!newPhotos) setStep({ label: 'Saving item…', progress: 0.5 })
       const savedId = id ?? (await createProduct(input))
@@ -409,16 +524,22 @@ export default function ProductForm() {
         {!sized ? (
           <div className="mt-4">
             <p className="text-sm text-muted">Bags, jewelry and other items without sizes. Shoppers won't see a size picker.</p>
-            <div className="mt-3 flex items-center gap-3">
-              <span className="text-sm font-medium">How many do you have?</span>
-              <CountStepper value={plainStock} onChange={setPlainStock} label="stock" />
-            </div>
+            {colors.length === 0 ? (
+              <div className="mt-3 flex items-center gap-3">
+                <span className="text-sm font-medium">How many do you have?</span>
+                <CountStepper value={plainStock} onChange={setPlainStock} label="stock" />
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted">Stock is set per color below.</p>
+            )}
             <label className="label mt-4" htmlFor="plain-measurements">Measurements (optional)</label>
             <input id="plain-measurements" className="input" placeholder="e.g. 25 × 18 × 8 cm, strap 120 cm" value={plainMeasurements} maxLength={200} onChange={(e) => setPlainMeasurements(e.target.value)} />
           </div>
         ) : (
           <>
-            <p className="mt-4 text-sm text-muted">Tap the sizes you have, then set how many of each.</p>
+            <p className="mt-4 text-sm text-muted">
+              {colors.length === 0 ? 'Tap the sizes you have, then set how many of each.' : 'Tap the sizes you have. Stock is set per color below.'}
+            </p>
             <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-subtle px-3 py-2.5">
               <span>
                 <span className="block text-sm font-medium">Different price per size</span>
@@ -466,7 +587,7 @@ export default function ProductForm() {
             {variants.length > 0 && (
               <div className="mt-5 flex items-center gap-2 border-t border-line pt-4 text-xs font-medium uppercase tracking-wide text-muted">
                 <span className="flex-1">Size</span>
-                <span className="w-[7.75rem] text-center">Stock</span>
+                {colors.length === 0 && <span className="w-[7.75rem] text-center">Stock</span>}
                 <span className="w-9" />
               </div>
             )}
@@ -479,7 +600,9 @@ export default function ProductForm() {
                     ) : (
                       <input className="input flex-1" placeholder="e.g. 28, 7.5, 2–3 yrs" aria-label="Size" value={v.size} maxLength={30} autoFocus={!v.id && !v.size} onChange={(e) => updateVariant(i, { size: e.target.value })} />
                     )}
-                    <CountStepper value={v.stock} onChange={(stock) => updateVariant(i, { stock })} label={v.size ? `size ${v.size}` : 'this size'} />
+                    {colors.length === 0 && (
+                      <CountStepper value={v.stock} onChange={(stock) => updateVariant(i, { stock })} label={v.size ? `size ${v.size}` : 'this size'} />
+                    )}
                     <button type="button" className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700 disabled:opacity-30" aria-label={`Remove size ${v.size}`} onClick={() => setVariants((vs) => vs.filter((_, j) => j !== i))}>✕</button>
                   </div>
                   <div className="flex gap-2">
@@ -516,15 +639,134 @@ export default function ProductForm() {
       </section>
 
       <section className="rounded-2xl border border-line bg-surface p-5">
+        <h2 className="font-medium">Colors <span className="text-sm font-normal text-muted">(optional)</span></h2>
+        <p className="mt-1 text-sm text-muted">
+          {colors.length === 0
+            ? 'Add the colors this item comes in. Each color keeps its own stock.'
+            : sized
+              ? 'Set how many of each size you have in each color. 0 means that size is sold out in that color.'
+              : 'Set how many you have in each color.'}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Common colors">
+          {PRESET_COLORS.map((c) => {
+            const on = hasColor(c.name)
+            return (
+              <button
+                key={c.name}
+                type="button"
+                aria-pressed={on}
+                onClick={() => togglePresetColor(c)}
+                className={`flex min-h-10 items-center gap-2 rounded-full border py-1 pl-1.5 pr-3.5 text-sm font-medium transition active:scale-95 ${
+                  on ? 'border-brand bg-brand text-white' : 'border-line bg-surface hover:border-brand hover:text-brand-ink'
+                }`}
+              >
+                <ColorSwatch hex={c.hex} size={22} className={on ? 'ring-white/60' : ''} />
+                {c.name}
+              </button>
+            )
+          })}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <input
+            className="input h-10 flex-1"
+            placeholder="Other color, e.g. Dusty rose"
+            aria-label="Other color name"
+            value={customColor}
+            maxLength={40}
+            onChange={(e) => setCustomColor(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addCustomColor()
+              }
+            }}
+          />
+          <button type="button" className="btn-ghost h-10 shrink-0 px-4" onClick={addCustomColor} disabled={!customColor.trim()}>
+            Add color
+          </button>
+        </div>
+
+        {colors.length > 0 && (
+          <div className="mt-5 space-y-3">
+            {colors.map((c) => {
+              const sizeRows = sized ? variants : [{ key: PLAIN, size: NO_SIZE }]
+              const total = sizeRows.reduce((n, v) => n + cellOf(c.key, v.key).stock, 0)
+              return (
+                <div key={c.key} className="rounded-xl border border-line bg-subtle p-3">
+                  <div className="flex items-center gap-2">
+                    {c.custom ? (
+                      // Custom colors: tap the dot to pick a swatch.
+                      <label className="relative cursor-pointer" title="Pick a swatch color">
+                        <ColorSwatch hex={c.hex} size={26} />
+                        <input
+                          type="color"
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          aria-label={`Swatch color for ${c.name || 'this color'}`}
+                          value={c.hex ?? '#cccccc'}
+                          onChange={(e) => updateColor(c.key, { hex: e.target.value })}
+                        />
+                      </label>
+                    ) : (
+                      <ColorSwatch hex={c.hex} size={26} />
+                    )}
+                    {c.custom ? (
+                      <input
+                        className="input h-9 min-w-0 flex-1 text-sm font-medium"
+                        aria-label="Color name"
+                        value={c.name}
+                        maxLength={40}
+                        onChange={(e) => updateColor(c.key, { name: e.target.value })}
+                      />
+                    ) : (
+                      <span className="flex-1 text-sm font-medium">{c.name}</span>
+                    )}
+                    <span className={`shrink-0 text-xs ${total === 0 ? 'font-medium text-red-700' : 'text-muted'}`}>
+                      {total === 0 ? 'Sold out' : `${total} in stock`}
+                    </span>
+                    <button
+                      type="button"
+                      className="h-9 w-9 shrink-0 rounded-lg text-muted hover:bg-red-50 hover:text-red-700"
+                      aria-label={`Remove color ${c.name}`}
+                      onClick={() => removeColor(c.key)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {sized && variants.length === 0 ? (
+                    <p className="mt-2 text-xs text-muted">Add sizes above to set stock for this color.</p>
+                  ) : (
+                    <div className="mt-2 space-y-1.5">
+                      {sizeRows.map((v) => (
+                        <div key={v.key} className="flex items-center justify-between gap-3 rounded-lg bg-surface py-1.5 pl-3 pr-1.5">
+                          <span className="text-sm">{sized ? v.size || <span className="text-muted">(unnamed size)</span> : 'How many?'}</span>
+                          <CountStepper
+                            value={cellOf(c.key, v.key).stock}
+                            onChange={(n) => setCellStock(c.key, v.key, n)}
+                            label={sized ? `${c.name} size ${v.size}` : `${c.name} stock`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-line bg-surface p-5">
         <div className="flex items-center justify-between">
           <h2 className="font-medium">Photos <span className="text-sm font-normal text-muted">({photos.length}/{MAX_IMAGES}, first is the cover)</span></h2>
         </div>
         {photos.length > 1 && <p className="mt-1 text-xs text-muted">Drag the ⠿ handle to change the order.</p>}
+        {colors.length > 0 && photos.length > 0 && (
+          <p className="mt-1 text-xs text-muted">Pick a color under a photo so shoppers see it when they choose that color.</p>
+        )}
         <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
           {photos.map((p, i) => (
+            <div key={p.kind === 'stored' ? p.path : p.preview} data-photo-index={i}>
             <div
-              key={p.kind === 'stored' ? p.path : p.preview}
-              data-photo-index={i}
               className={`group relative aspect-[4/5] overflow-hidden rounded-lg bg-subtle transition ${dragging === i ? 'z-10 scale-105 shadow-lg ring-2 ring-brand' : ''}`}
             >
               <img src={p.kind === 'stored' ? imageUrl(p.path) : p.preview} alt="" className="pointer-events-none h-full w-full select-none object-cover" draggable={false} />
@@ -556,6 +798,20 @@ export default function ProductForm() {
                 {i !== 0 ? <button type="button" className="text-[11px] text-white" onClick={() => makeCover(i)}>Cover</button> : <span />}
                 <button type="button" className="text-[11px] text-white" onClick={() => removePhoto(i)} aria-label="Remove photo">Remove</button>
               </div>
+            </div>
+            {colors.length > 0 && (
+              <select
+                className="mt-1.5 h-8 w-full rounded-md border border-line bg-surface px-1.5 text-[11px]"
+                aria-label={`Color shown in photo ${i + 1}`}
+                value={p.colorKey && colors.some((c) => c.key === p.colorKey) ? p.colorKey : ''}
+                onChange={(e) => setPhotos((ps) => ps.map((x, j) => (j === i ? { ...x, colorKey: e.target.value || undefined } : x)))}
+              >
+                <option value="">All colors</option>
+                {colors.map((c) => (
+                  <option key={c.key} value={c.key}>{c.name || '(unnamed)'}</option>
+                ))}
+              </select>
+            )}
             </div>
           ))}
           {photos.length < MAX_IMAGES && (

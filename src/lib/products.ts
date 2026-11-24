@@ -3,7 +3,7 @@ import { supabase } from './supabase'
 import type { Audience, Product, ProductInput } from './types'
 import { AUDIENCES } from './types'
 
-const SELECT = '*, product_variants(*)'
+const SELECT = '*, product_variants(*), product_colors(*)'
 
 function normalize(p: Product): Product {
   return {
@@ -15,7 +15,10 @@ function normalize(p: Product): Product {
     // Rows saved before the audiences column existed have none set.
     audiences: AUDIENCES.filter((a) => (p.audiences ?? []).includes(a)),
     product_variants: [...p.product_variants]
-      .map((v) => ({ ...v, measurements: v.measurements ?? '', price: v.price == null ? null : Number(v.price) }))
+      .map((v) => ({ ...v, color_id: v.color_id ?? null, measurements: v.measurements ?? '', price: v.price == null ? null : Number(v.price) }))
+      .sort((a, b) => a.sort_order - b.sort_order),
+    product_colors: [...(p.product_colors ?? [])]
+      .map((c) => ({ ...c, image_paths: (c.image_paths ?? []).filter((path) => p.image_paths.includes(path)) }))
       .sort((a, b) => a.sort_order - b.sort_order),
   }
 }
@@ -51,7 +54,43 @@ export async function fetchDeletedProducts(): Promise<Product[]> {
   return (data as Product[]).map(normalize)
 }
 
-async function syncVariants(productId: string, input: ProductInput): Promise<void> {
+/** Saves the item's colors and returns their IDs, in the same order as input.colors. */
+async function syncColors(productId: string, input: ProductInput): Promise<string[]> {
+  const { data: existing, error: readErr } = await supabase.from('product_colors').select('id').eq('product_id', productId)
+  if (readErr) throw readErr
+
+  // Removing a color also removes its stock rows (on delete cascade).
+  const keep = new Set(input.colors.filter((c) => c.id).map((c) => c.id))
+  const removed = (existing ?? []).map((c) => c.id as string).filter((id) => !keep.has(id))
+  if (removed.length) {
+    const { error } = await supabase.from('product_colors').delete().in('id', removed)
+    if (error) throw error
+  }
+
+  const rows = input.colors.map((c, i) => ({
+    ...(c.id ? { id: c.id } : {}),
+    product_id: productId,
+    name: c.name.trim(),
+    hex: c.hex,
+    image_paths: c.image_paths.filter((path) => input.image_paths.includes(path)),
+    sort_order: i,
+  }))
+  const updates = rows.filter((r) => 'id' in r)
+  if (updates.length) {
+    const { error } = await supabase.from('product_colors').upsert(updates)
+    if (error) throw error
+  }
+  const ids = input.colors.map((c) => c.id ?? '')
+  const inserts = rows.map((r, i) => ({ r, i })).filter(({ r }) => !('id' in r))
+  if (inserts.length) {
+    const { data, error } = await supabase.from('product_colors').insert(inserts.map(({ r }) => r)).select('id, sort_order')
+    if (error) throw error
+    for (const row of data ?? []) ids[row.sort_order as number] = row.id as string
+  }
+  return ids
+}
+
+async function syncVariants(productId: string, input: ProductInput, colorIds: string[]): Promise<void> {
   const { data: existing, error: readErr } = await supabase
     .from('product_variants')
     .select('id')
@@ -68,6 +107,7 @@ async function syncVariants(productId: string, input: ProductInput): Promise<voi
   const rows = input.variants.map((v, i) => ({
     ...(v.id ? { id: v.id } : {}),
     product_id: productId,
+    color_id: v.colorIndex == null ? null : colorIds[v.colorIndex],
     size: v.size.trim(),
     stock: v.stock,
     measurements: (v.measurements ?? '').trim(),
@@ -102,14 +142,14 @@ function productRow(input: ProductInput) {
 export async function createProduct(input: ProductInput): Promise<string> {
   const { data, error } = await supabase.from('products').insert(productRow(input)).select('id').single()
   if (error) throw error
-  await syncVariants(data.id, input)
+  await syncVariants(data.id, input, await syncColors(data.id, input))
   return data.id
 }
 
 export async function updateProduct(id: string, input: ProductInput): Promise<void> {
   const { error } = await supabase.from('products').update(productRow(input)).eq('id', id)
   if (error) throw error
-  await syncVariants(id, input)
+  await syncVariants(id, input, await syncColors(id, input))
 }
 
 /** Moves items to "Recently deleted". Nothing is removed yet, so they can be restored. */

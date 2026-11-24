@@ -1,12 +1,12 @@
 import { formatPrice, SHOP_NAME } from './format'
 import type { CartLine } from '../store/cart'
 import { buildOrderCode } from './sales'
-import { sizeLabel } from './types'
+import { optionLabel } from './types'
 
 export function buildOrderMessage(lines: CartLine[]): string {
   const items = lines.map(
     (l, i) => {
-      const details = [sizeLabel(l.size), l.condition === 'preloved' ? 'pre-loved' : null].filter(Boolean)
+      const details = [optionLabel(l.color, l.size), l.condition === 'preloved' ? 'pre-loved' : null].filter(Boolean)
       const suffix = details.length ? ` (${details.join(', ')})` : ''
       return `${i + 1}. ${l.name}${suffix} × ${l.qty} — ${formatPrice(l.price * l.qty)}`
     },

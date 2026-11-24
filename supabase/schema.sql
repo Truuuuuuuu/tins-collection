@@ -49,6 +49,29 @@ alter table public.products drop constraint if exists products_audiences_check;
 alter table public.products add constraint products_audiences_check
   check (audiences <@ array['men', 'women', 'kids']::text[]);
 
+-- Colors an item comes in. Optional: an item without colors keeps one stock row per size.
+-- image_paths lists which of the item's photos show this color (empty = no photos of its own).
+create table if not exists public.product_colors (
+  id          uuid primary key default gen_random_uuid(),
+  product_id  uuid not null references public.products(id) on delete cascade,
+  name        text not null check (char_length(name) between 1 and 40),
+  hex         text check (hex ~ '^#[0-9a-fA-F]{6}$'),
+  image_paths text[] not null default '{}',
+  sort_order  integer not null default 0
+);
+create index if not exists product_colors_product_id_idx on public.product_colors(product_id);
+create unique index if not exists product_colors_name_idx on public.product_colors(product_id, lower(name));
+
+-- Each stock row is a size within a color (color_id is empty for items without colors).
+-- Deleting a color removes its stock rows with it.
+alter table public.product_variants
+  add column if not exists color_id uuid references public.product_colors(id) on delete cascade;
+create index if not exists product_variants_color_id_idx on public.product_variants(color_id);
+alter table public.product_variants drop constraint if exists product_variants_product_id_size_key;
+alter table public.product_variants drop constraint if exists product_variants_product_color_size_key;
+alter table public.product_variants add constraint product_variants_product_color_size_key
+  unique nulls not distinct (product_id, color_id, size);
+
 -- Sales the admin records after confirming an order in Messenger.
 -- Names, sizes and prices are copied in, so history stays readable after an item is edited or deleted.
 create table if not exists public.sales (
@@ -64,6 +87,8 @@ create table if not exists public.sales (
   unit_price    numeric(10,2) not null check (unit_price >= 0)
 );
 create index if not exists sales_sold_at_idx on public.sales(sold_at desc);
+-- The color sold, copied in like the size. Empty for items without colors.
+alter table public.sales add column if not exists color text not null default '';
 
 create table if not exists public.admins (
   user_id uuid primary key references auth.users(id) on delete cascade
@@ -97,18 +122,21 @@ declare
 begin
   if not public.is_admin() then raise exception 'Only the admin can record sales'; end if;
   for it in select * from jsonb_array_elements(items) loop
-    select pv.id, pv.size, pv.stock, p.id as product_id, p.name, p.category
+    select pv.id, pv.size, pv.stock, p.id as product_id, p.name, p.category, coalesce(c.name, '') as color
       into v
-      from public.product_variants pv join public.products p on p.id = pv.product_id
+      from public.product_variants pv
+      join public.products p on p.id = pv.product_id
+      left join public.product_colors c on c.id = pv.color_id
       where pv.id = (it->>'variant_id')::uuid
       for update of pv;
     if not found then raise exception 'An item in this sale no longer exists'; end if;
     if v.stock < (it->>'qty')::int then
-      raise exception 'Only % left of % (%)', v.stock, v.name, v.size;
+      raise exception 'Only % left of % (%)', v.stock, v.name,
+        concat_ws(', ', nullif(v.color, ''), nullif(v.size, 'One size'));
     end if;
     update public.product_variants set stock = stock - (it->>'qty')::int where id = v.id;
-    insert into public.sales (order_code, product_id, variant_id, product_name, size, category, qty, unit_price)
-      values (coalesce(code, ''), v.product_id, v.id, v.name, v.size, v.category,
+    insert into public.sales (order_code, product_id, variant_id, product_name, size, color, category, qty, unit_price)
+      values (coalesce(code, ''), v.product_id, v.id, v.name, v.size, v.color, v.category,
               (it->>'qty')::int, (it->>'unit_price')::numeric);
   end loop;
 end $$;
@@ -129,6 +157,7 @@ end $$;
 -- ---------- Row Level Security ----------
 alter table public.products         enable row level security;
 alter table public.product_variants enable row level security;
+alter table public.product_colors   enable row level security;
 alter table public.admins           enable row level security;
 alter table public.sales            enable row level security;
 
@@ -146,6 +175,12 @@ create policy "variants: public read" on public.product_variants for select usin
 create policy "variants: admin write" on public.product_variants for all
   using (public.is_admin()) with check (public.is_admin());
 
+drop policy if exists "colors: public read" on public.product_colors;
+drop policy if exists "colors: admin write" on public.product_colors;
+create policy "colors: public read" on public.product_colors for select using (true);
+create policy "colors: admin write" on public.product_colors for all
+  using (public.is_admin()) with check (public.is_admin());
+
 drop policy if exists "sales: admin only" on public.sales;
 create policy "sales: admin only" on public.sales for all
   using (public.is_admin()) with check (public.is_admin());
@@ -158,8 +193,8 @@ create policy "admins: self read" on public.admins for select using (user_id = a
 -- ("permission denied for table ..."). These grants open the door; the RLS policies above
 -- still decide who can actually read or change each row.
 grant usage on schema public to anon, authenticated;
-grant select on public.products, public.product_variants to anon, authenticated;
-grant insert, update, delete on public.products, public.product_variants to authenticated;
+grant select on public.products, public.product_variants, public.product_colors to anon, authenticated;
+grant insert, update, delete on public.products, public.product_variants, public.product_colors to authenticated;
 grant select on public.admins to authenticated;
 grant execute on function public.is_admin() to anon, authenticated;
 grant select, insert, delete on public.sales to authenticated;

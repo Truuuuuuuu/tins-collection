@@ -47,7 +47,7 @@ import {
   isSoldOut,
   itemType,
   priceRange,
-  sizeLabel,
+  variantLabel,
   sizePrice,
   stockStatus,
   totalStock,
@@ -587,8 +587,8 @@ export default function Dashboard() {
                           // With per-size prices, each stepper shows its size's price too.
                           size={
                             hasSizePrices(p)
-                              ? `${sizeLabel(v.size) ?? "Stock"} · ${formatPrice(sizePrice(p, v))}`
-                              : (sizeLabel(v.size) ?? "Stock")
+                              ? `${variantLabel(p, v) ?? "Stock"} · ${formatPrice(sizePrice(p, v))}`
+                              : (variantLabel(p, v) ?? "Stock")
                           }
                           stock={v.stock}
                           onCommit={(n) => changeStock(p, v.id, n)}

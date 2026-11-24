@@ -1,13 +1,15 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Condition, Product } from '../lib/types'
-import { isSoldOut, sizeLabel, sizePrice } from '../lib/types'
+import { colorOf, isSoldOut, optionLabel, sizePrice } from '../lib/types'
 
 export interface CartLine {
   productId: string
   variantId: string
   name: string
   size: string
+  /** The color picked, for items that come in colors. */
+  color?: string
   /** Optional because carts saved before conditions existed don't have it. */
   condition?: Condition
   price: number
@@ -51,13 +53,20 @@ export const useCart = create<CartState>()(
         for (const line of get().lines) {
           const product = products.find((p) => p.id === line.productId)
           const variant = product?.product_variants.find((v) => v.id === line.variantId)
-          const label = sizeLabel(line.size) ? `${line.name} (${line.size})` : line.name
+          const option = optionLabel(line.color, line.size)
+          const label = option ? `${line.name} (${option})` : line.name
           if (!product || !variant || isSoldOut(product) || variant.stock === 0) {
             changed.push(`${label} is no longer available`)
             continue
           }
           // Keep the cart on the size's current price (sizes can cost different amounts).
-          let updated = { ...line, price: sizePrice(product, variant), name: product.name, size: variant.size }
+          let updated = {
+            ...line,
+            price: sizePrice(product, variant),
+            name: product.name,
+            size: variant.size,
+            color: colorOf(product, variant)?.name,
+          }
           if (line.qty > variant.stock) {
             changed.push(`${label} reduced to ${variant.stock}, the stock left`)
             updated = { ...updated, qty: variant.stock }
