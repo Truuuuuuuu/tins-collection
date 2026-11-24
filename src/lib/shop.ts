@@ -19,16 +19,12 @@ export function inFacebookApp(): boolean {
 
 /**
  * Link to the Facebook page for the current browser. Facebook's built-in browser can't open
- * facebook.com links in a new tab, so there it hands the page ID to the app itself via fb://.
+ * links in a new tab and ignores fb:// links, so there it opens the page in the same tab.
  */
 export function facebookLink(): { href: string; newTab: boolean } | null {
   const url = facebookUrl()
   if (!url) return null
-  if (!inFacebookApp()) return { href: url, newTab: true }
-  const id = pageUsername()
-  return /^\d+$/.test(id)
-    ? { href: `fb://profile/${id}`, newTab: false }
-    : { href: url, newTab: false }
+  return { href: url, newTab: !inFacebookApp() }
 }
 
 export const storeAddress = (import.meta.env.VITE_STORE_ADDRESS || '').trim()
