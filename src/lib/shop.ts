@@ -5,7 +5,11 @@ export function facebookUrl(): string | null {
   const url = (import.meta.env.VITE_FB_PAGE_URL || '').trim()
   if (url) return /^https?:\/\//i.test(url) ? url : `https://${url}`
   const username = pageUsername()
-  return username ? `https://www.facebook.com/${encodeURIComponent(username)}` : null
+  if (!username) return null
+  // Pages without a username only resolve through profile.php; facebook.com/<id> is a dead link.
+  return /^\d+$/.test(username)
+    ? `https://www.facebook.com/profile.php?id=${username}`
+    : `https://www.facebook.com/${encodeURIComponent(username)}`
 }
 
 export const storeAddress = (import.meta.env.VITE_STORE_ADDRESS || '').trim()

@@ -30,7 +30,8 @@ export default function Footer() {
             <Wordmark />
           </Link>
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted">
-            Brand new and pre-loved clothing and accessories, handpicked and in limited stock.
+            Brand new and pre-loved clothing and accessories, handpicked and in
+            limited stock.
           </p>
         </div>
 
@@ -132,11 +133,26 @@ export default function Footer() {
                       <path d="M24 12a12 12 0 1 0-13.88 11.85v-8.38H7.08V12h3.04V9.36c0-3 1.79-4.67 4.53-4.67 1.31 0 2.68.24 2.68.24v2.95h-1.51c-1.49 0-1.95.93-1.95 1.87V12h3.33l-.53 3.47h-2.8v8.38A12 12 0 0 0 24 12Z" />
                     </svg>
                     <span>
-                      <span className="block text-ink group-hover:text-brand-ink">
-                        Tin's Collection | Casiguran
+                      <span className="flex items-center gap-1 text-ink group-hover:text-brand-ink">
+                        Tin's Collection
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="shrink-0 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                          aria-hidden
+                        >
+                          <path d="M7 17 17 7M8 7h9v9" />
+                        </svg>
+                        <span className="sr-only">(opens in a new tab)</span>
                       </span>
                       <span className="block text-muted">
-                        Our offical Facebook page
+                        Our official Facebook page
                       </span>
                     </span>
                   </a>

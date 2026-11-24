@@ -24,12 +24,16 @@ export function buildOrderMessage(lines: CartLine[]): string {
 
 /**
  * The page username, or its ID number when it has no username. Accepts a bare value or a pasted
- * link like https://m.me/name, https://facebook.com/name or https://facebook.com/profile.php?id=123
+ * link like https://m.me/name, https://facebook.com/name, https://facebook.com/profile.php?id=123
+ * or https://facebook.com/people/Name/123/
  */
 export function pageUsername(): string {
   const raw = (import.meta.env.VITE_FB_PAGE_USERNAME || '').trim()
   const id = raw.match(/profile\.php\?(?:.*&)?id=(\d+)/i)
   if (id) return id[1]
+  // Share links for pages without a username: facebook.com/people/<Name>/<id>/
+  const people = raw.match(/\/people\/[^/]+\/(\d+)/i)
+  if (people) return people[1]
   return raw
     .replace(/^https?:\/\/(www\.|m\.)?(m\.me|facebook\.com|fb\.com)\//i, '')
     .replace(/[/?#].*$/, '')
