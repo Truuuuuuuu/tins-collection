@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import BulkActionSheet from "../../components/BulkActionSheet";
 import FilterMenu from "../../components/FilterMenu";
 import Pagination from "../../components/Pagination";
@@ -84,6 +84,18 @@ export default function Dashboard() {
     { total: number; pieces: number } | null | undefined
   >(undefined);
   const listTop = useRef<HTMLDivElement>(null);
+  // Coming back from the item form: which item was just saved, so it can glow in the list.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [justSaved, setJustSaved] = useState<string | null>(null);
+  useEffect(() => {
+    const saved = (location.state as { saved?: { id: string; name: string; isNew: boolean } } | null)?.saved;
+    if (!saved) return;
+    setJustSaved(saved.id);
+    setToast(saved.isNew ? `“${saved.name}” added` : `Changes to “${saved.name}” saved`);
+    // Forget it, so a refresh or going back doesn't replay the highlight.
+    navigate(".", { replace: true, state: null });
+  }, [location.state, navigate]);
 
   useEffect(() => {
     fetchSales(startOfMonth())
@@ -167,6 +179,19 @@ export default function Dashboard() {
     10,
     JSON.stringify([q, types, categories, conditions, audiences, stock]),
   );
+  // Once the list has loaded, open the page holding the saved item and scroll it into view.
+  const savedIndex = justSaved ? visible.findIndex((p) => p.id === justSaved) : -1;
+  const savedPage = savedIndex === -1 ? null : Math.floor(savedIndex / 10) + 1;
+  useEffect(() => {
+    if (loading || !justSaved) return;
+    if (savedPage && savedPage !== pager.page) return pager.setPage(savedPage);
+    document
+      .getElementById(`item-${justSaved}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = window.setTimeout(() => setJustSaved(null), 2600);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, justSaved, savedPage, pager.page]);
   const goToPage = (n: number) => {
     pager.setPage(n);
     listTop.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -521,7 +546,8 @@ export default function Dashboard() {
             {pager.pageItems.map((p) => (
               <li
                 key={p.id}
-                className={`rounded-2xl border bg-surface p-4 transition ${selected.has(p.id) ? "border-brand ring-1 ring-brand" : "border-line"} ${busyId === p.id ? "opacity-70" : ""}`}
+                id={`item-${p.id}`}
+                className={`scroll-mt-40 rounded-2xl border bg-surface p-4 transition ${selected.has(p.id) ? "border-brand ring-1 ring-brand" : "border-line"} ${busyId === p.id ? "opacity-70" : ""} ${justSaved === p.id ? "motion-safe:animate-[saved-glow_2.4s_ease-out_both] motion-reduce:border-brand" : ""}`}
               >
                 <div className="flex gap-3 sm:gap-4">
                   <input

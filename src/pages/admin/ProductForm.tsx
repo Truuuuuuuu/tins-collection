@@ -62,6 +62,10 @@ export default function ProductForm() {
   const [photos, setPhotos] = useState<Photo[]>([])
   const [originalPaths, setOriginalPaths] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  // What the save button says while working, and how far along it is (0–1).
+  const [step, setStep] = useState<{ label: string; progress: number }>({ label: '', progress: 0 })
+  // Brief "Saved!" moment before heading back to the item list.
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Loaded once; saving waits for it so a quick save still reuses the existing spelling.
@@ -108,6 +112,16 @@ export default function ProductForm() {
       setLoading(false)
     })
   }, [id, navigate])
+
+  // The page behind the saving overlay stays put.
+  useEffect(() => {
+    if (!saving) return
+    const { overflow } = document.body.style
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = overflow
+    }
+  }, [saving])
 
   // Free preview blob URLs when leaving the page.
   useEffect(
@@ -220,6 +234,11 @@ export default function ProductForm() {
     if (problem) return setError(problem)
     setError(null)
     setSaving(true)
+    setSaved(false)
+    const newPhotos = photos.filter((p) => p.kind === 'new').length
+    // Photos take most of the time, so they get most of the bar; the rest is saving the item.
+    const photoShare = newPhotos ? 0.75 : 0
+    setStep({ label: newPhotos ? `Uploading photo 1 of ${newPhotos}…` : 'Saving item…', progress: 0.08 })
     const known = (await categoriesLoad.current) ?? knownCategories
 
     const uploaded: string[] = []
@@ -232,6 +251,11 @@ export default function ProductForm() {
           const path = await uploadImage(p.file)
           uploaded.push(path)
           paths.push(path)
+          const done = uploaded.length
+          setStep({
+            label: done < newPhotos ? `Uploading photo ${done + 1} of ${newPhotos}…` : 'Saving item…',
+            progress: 0.08 + photoShare * (done / newPhotos),
+          })
         }
       }
       const input = {
@@ -247,17 +271,26 @@ export default function ProductForm() {
           ? variants.map((v) => ({ id: v.id, size: v.size, stock: Number(v.stock), measurements: v.measurements, price: savedSizePrice(v) }))
           : [{ id: plainId, size: NO_SIZE, stock: plainStock, measurements: plainMeasurements }],
       }
+      if (!newPhotos) setStep({ label: 'Saving item…', progress: 0.5 })
+      const savedId = id ?? (await createProduct(input))
       if (id) await updateProduct(id, input)
-      else await createProduct(input)
 
       // Photos removed in this edit are deleted from storage now that the save succeeded.
       const removed = originalPaths.filter((p) => !paths.includes(p))
       await deleteImages(removed).catch(() => undefined)
-      navigate('/admin')
+      setStep({ label: 'Saved', progress: 1 })
+      setSaved(true)
+      // Let the checkmark play, then go back; the list highlights the item that was just saved.
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      window.setTimeout(
+        () => navigate('/admin', { state: { saved: { id: savedId, name: name.trim(), isNew: !isEdit } } }),
+        reduceMotion ? 300 : 900,
+      )
     } catch (err) {
       await deleteImages(uploaded).catch(() => undefined)
       setError(errorMessage(err, 'Could not save'))
       setSaving(false)
+      setStep({ label: '', progress: 0 })
     }
   }
 
@@ -541,6 +574,49 @@ export default function ProductForm() {
         <button className="btn-primary flex-1 py-3" disabled={saving}>{saving ? 'Saving…' : isEdit ? 'Save changes' : 'Add item'}</button>
         <Link to="/admin" className="btn-ghost py-3">Cancel</Link>
       </div>
+      {saving && (
+        // Covers the page while saving: the form behind is muted and can't be changed mid-save.
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="absolute inset-0 bg-ink/25 backdrop-blur-[2px] motion-safe:animate-[sheet-fade_.25s_ease-out_both]" aria-hidden />
+          <div className="relative w-full max-w-xs rounded-3xl bg-surface px-6 pb-6 pt-7 text-center shadow-2xl motion-safe:animate-[modal-in_.3s_cubic-bezier(.16,1,.3,1)_both]">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center">
+              {saved ? (
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 motion-safe:animate-[check-pop_.45s_cubic-bezier(.16,1,.3,1)_both]">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M5 12l5 5L20 7" strokeDasharray="24" strokeDashoffset="24" className="motion-safe:animate-[check-draw_.35s_.2s_ease-out_forwards] motion-reduce:[stroke-dashoffset:0]" />
+                  </svg>
+                </span>
+              ) : (
+                <svg className="h-14 w-14 animate-spin text-brand motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeOpacity=".15" strokeWidth="2.5" />
+                  <path d="M21.5 12A9.5 9.5 0 0 0 12 2.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              )}
+            </div>
+            <p key={saved ? 'done' : 'saving'} className="mt-4 font-display text-xl motion-safe:animate-[tab-in_.3s_ease-out_both]">
+              {saved ? (isEdit ? 'Changes saved!' : 'Item added!') : isEdit ? 'Saving changes' : 'Adding item'}
+            </p>
+            <p key={step.label} className="mt-1 h-5 text-sm text-muted motion-safe:animate-[tab-in_.25s_ease-out_both]">
+              {saved ? 'Taking you back to your items…' : step.label}
+            </p>
+            {/* Progress, with a soft shimmer so it never looks stuck. */}
+            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-subtle" aria-hidden>
+              <div
+                className={`relative h-full overflow-hidden rounded-full transition-[width,background-color] duration-500 ease-out ${saved ? 'bg-emerald-600' : 'bg-brand'}`}
+                style={{ width: `${step.progress * 100}%` }}
+              >
+                {!saved && (
+                  <span className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/70 to-transparent motion-safe:animate-[save-shimmer_1.1s_linear_infinite]" />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   )
 }
