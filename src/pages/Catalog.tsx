@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import EmptyRackIllustration from "../components/EmptyRackIllustration";
+import NoResultsIllustration from "../components/NoResultsIllustration";
 import FilterMenu from "../components/FilterMenu";
 import FloatingSearch from "../components/FloatingSearch";
 import Pagination from "../components/Pagination";
@@ -338,12 +339,13 @@ export default function Catalog() {
           <p className="mt-6 text-muted">No items yet. Check back soon!</p>
         </div>
       ) : visible.length === 0 ? (
-        <p
+        <div
           key={`${condition}-${audiences.join()}`}
-          className="py-20 text-center text-muted motion-safe:animate-[tab-in_.4s_ease-out_both]"
+          className="flex flex-col items-center py-16 text-center motion-safe:animate-[tab-in_.4s_ease-out_both]"
         >
-          Nothing matches your search.
-        </p>
+          <NoResultsIllustration className="w-56 max-w-full sm:w-64" />
+          <p className="mt-6 text-muted">Nothing matches your search.</p>
+        </div>
       ) : (
         <>
           {/* Keyed on the tab so switching tabs remounts the grid and replays the staggered fade-in. */}
