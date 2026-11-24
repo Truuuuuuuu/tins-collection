@@ -1,6 +1,7 @@
 import { deleteImages } from './images'
 import { supabase } from './supabase'
-import type { Product, ProductInput } from './types'
+import type { Audience, Product, ProductInput } from './types'
+import { AUDIENCES } from './types'
 
 const SELECT = '*, product_variants(*)'
 
@@ -11,6 +12,8 @@ function normalize(p: Product): Product {
     // Rows saved before the condition column existed count as brand new.
     condition: p.condition === 'preloved' ? 'preloved' : 'new',
     deleted_at: p.deleted_at ?? null,
+    // Rows saved before the audiences column existed have none set.
+    audiences: AUDIENCES.filter((a) => (p.audiences ?? []).includes(a)),
     product_variants: [...p.product_variants]
       .map((v) => ({ ...v, measurements: v.measurements ?? '', price: v.price == null ? null : Number(v.price) }))
       .sort((a, b) => a.sort_order - b.sort_order),
@@ -89,6 +92,7 @@ function productRow(input: ProductInput) {
     description: input.description.trim(),
     price: input.price,
     category: input.category.trim(),
+    audiences: AUDIENCES.filter((a) => input.audiences.includes(a)),
     condition: input.condition,
     image_paths: input.image_paths,
     is_sold_out: input.is_sold_out,
@@ -155,5 +159,12 @@ export async function setSoldOut(productIds: string | string[], soldOut: boolean
 export async function updateCategory(productIds: string | string[], category: string): Promise<void> {
   const ids = Array.isArray(productIds) ? productIds : [productIds]
   const { error } = await supabase.from('products').update({ category: category.trim() }).in('id', ids)
+  if (error) throw error
+}
+
+/** Sets who one or more items are for (men, women, kids). */
+export async function updateAudiences(productIds: string | string[], audiences: Audience[]): Promise<void> {
+  const ids = Array.isArray(productIds) ? productIds : [productIds]
+  const { error } = await supabase.from('products').update({ audiences: AUDIENCES.filter((a) => audiences.includes(a)) }).in('id', ids)
   if (error) throw error
 }

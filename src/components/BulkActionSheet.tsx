@@ -135,7 +135,7 @@ export default function BulkActionSheet({ count, total, onSelectAll, onClear, ac
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-4 gap-2">
+        <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}>
           {actions.map((a) => (
             <button
               key={a.label}

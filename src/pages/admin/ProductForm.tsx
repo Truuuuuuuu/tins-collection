@@ -9,8 +9,8 @@ import { categoryOptions, matchCategory } from '../../lib/categories'
 import BackButton from '../../components/BackButton'
 import CountStepper from '../../components/CountStepper'
 import { ProductFormSkeleton } from '../../components/Skeletons'
-import { CONDITION_LABEL, hasSizes, NO_SIZE } from '../../lib/types'
-import type { Condition, VariantInput } from '../../lib/types'
+import { AUDIENCE_LABEL, AUDIENCES, CONDITION_LABEL, hasSizes, NO_SIZE } from '../../lib/types'
+import type { Audience, Condition, VariantInput } from '../../lib/types'
 
 const MAX_IMAGES = 5
 
@@ -47,6 +47,8 @@ export default function ProductForm() {
   const [category, setCategory] = useState('')
   // Categories already in use, so typing "pants" reuses the existing "Pants".
   const [knownCategories, setKnownCategories] = useState<CategoryOption[]>([])
+  // Men, women and/or kids; pick several for unisex items.
+  const [audiences, setAudiences] = useState<Audience[]>([])
   const [condition, setCondition] = useState<Condition>('new')
   const [soldOut, setSoldOut] = useState(false)
   const [variants, setVariants] = useState<SizeRow[]>([])
@@ -79,6 +81,7 @@ export default function ProductForm() {
       setDescription(p.description)
       setPrice(String(p.price))
       setCategory(p.category)
+      setAudiences(p.audiences)
       setCondition(p.condition)
       setSoldOut(p.is_sold_out)
       if (p.product_variants.length && !hasSizes(p.product_variants)) {
@@ -236,6 +239,7 @@ export default function ProductForm() {
         description,
         price: Number(price),
         category: matchCategory(category, known),
+        audiences,
         condition,
         is_sold_out: soldOut,
         image_paths: paths,
@@ -290,6 +294,33 @@ export default function ProductForm() {
             )}
           </div>
         </div>
+        <fieldset>
+          <legend className="label">Shop for</legend>
+          <div className="grid grid-cols-3 gap-2">
+            {AUDIENCES.map((a) => {
+              const on = audiences.includes(a)
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setAudiences((xs) => (on ? xs.filter((x) => x !== a) : [...xs, a]))}
+                  className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-medium transition active:scale-95 ${
+                    on ? 'border-brand bg-brand text-white shadow-sm shadow-brand/20' : 'border-line bg-surface text-muted hover:border-brand hover:text-ink'
+                  }`}
+                >
+                  {on && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                  )}
+                  {AUDIENCE_LABEL[a]}
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-xs text-muted">Pick more than one for unisex items. Leave empty if it doesn't apply.</p>
+        </fieldset>
         <fieldset>
           <legend className="label">Condition</legend>
           <div className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-subtle p-1">

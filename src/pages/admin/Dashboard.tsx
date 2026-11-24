@@ -19,6 +19,7 @@ import {
   setSoldOut,
   TRASH_DAYS,
   trashProducts,
+  updateAudiences,
   updateCategory,
   updateStock,
 } from "../../lib/products";
@@ -29,12 +30,16 @@ import {
   matchCategory,
 } from "../../lib/categories";
 import type {
+  Audience,
   Condition,
   ItemType,
   Product,
   StockStatus,
 } from "../../lib/types";
 import {
+  AUDIENCE_LABEL,
+  AUDIENCES,
+  audienceLabel,
   CONDITION_LABEL,
   ITEM_TYPE_LABEL,
   STOCK_STATUS_LABEL,
@@ -62,6 +67,7 @@ export default function Dashboard() {
   const [types, setTypes] = useState<ItemType[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [conditions, setConditions] = useState<Condition[]>([]);
+  const [audiences, setAudiences] = useState<Audience[]>([]);
   const [stock, setStock] = useState<StockStatus[]>([]);
   const [tidying, setTidying] = useState(false);
   // Bulk actions
@@ -71,6 +77,8 @@ export default function Dashboard() {
   );
   const [categoryDialog, setCategoryDialog] = useState(false);
   const [newCategory, setNewCategory] = useState("");
+  const [audienceDialog, setAudienceDialog] = useState(false);
+  const [newAudiences, setNewAudiences] = useState<Audience[]>([]);
   // This month's sales: undefined while loading, null if sales aren't set up in the database yet.
   const [monthSales, setMonthSales] = useState<
     { total: number; pieces: number } | null | undefined
@@ -142,6 +150,10 @@ export default function Dashboard() {
         categories.length === 0 || categories.includes(categoryKey(p.category)),
     )
     .filter((p) => conditions.length === 0 || conditions.includes(p.condition))
+    .filter(
+      (p) =>
+        audiences.length === 0 || audiences.some((a) => p.audiences.includes(a)),
+    )
     .filter((p) => stock.length === 0 || stock.includes(stockStatus(p)))
     .filter(
       (p) =>
@@ -153,7 +165,7 @@ export default function Dashboard() {
   const pager = usePagination(
     visible,
     10,
-    JSON.stringify([q, types, categories, conditions, stock]),
+    JSON.stringify([q, types, categories, conditions, audiences, stock]),
   );
   const goToPage = (n: number) => {
     pager.setPage(n);
@@ -218,6 +230,23 @@ export default function Dashboard() {
     );
   };
 
+  const saveBulkAudiences = () => {
+    const ids = picked.map((p) => p.id);
+    const chosen = AUDIENCES.filter((a) => newAudiences.includes(a));
+    setAudienceDialog(false);
+    bulk(
+      async () => {
+        await updateAudiences(ids, chosen);
+        setProducts((ps) =>
+          ps.map((p) => (ids.includes(p.id) ? { ...p, audiences: chosen } : p)),
+        );
+      },
+      chosen.length
+        ? `${plural(ids.length, "item")} now for ${audienceLabel(chosen)}`
+        : `Cleared “Shop for” on ${plural(ids.length, "item")}`,
+    );
+  };
+
   const confirmTrash = () => {
     if (!confirmingDelete) return;
     const ids = confirmingDelete.map((p) => p.id);
@@ -254,6 +283,11 @@ export default function Dashboard() {
       label: CONDITION_LABEL[c],
       remove: () => setConditions((xs) => xs.filter((x) => x !== c)),
     })),
+    ...audiences.map((a) => ({
+      key: `audience-${a}`,
+      label: AUDIENCE_LABEL[a],
+      remove: () => setAudiences((xs) => xs.filter((x) => x !== a)),
+    })),
     ...categories.map((c) => ({
       key: `category-${c}`,
       label: allCategories.find((o) => o.key === c)?.label ?? c,
@@ -270,6 +304,7 @@ export default function Dashboard() {
     setTypes([]);
     setCategories([]);
     setConditions([]);
+    setAudiences([]);
     setStock([]);
   };
   /** Overview shortcut: show only one stock status and jump to the list. */
@@ -396,6 +431,8 @@ export default function Dashboard() {
             onChange={setCategories}
             conditions={conditions}
             onConditionsChange={setConditions}
+            audiences={audiences}
+            onAudiencesChange={setAudiences}
             stock={stock}
             onStockChange={setStock}
             resultCount={visible.length}
@@ -511,6 +548,8 @@ export default function Dashboard() {
                     <p className="text-sm text-muted">
                       {formatPriceRange(priceRange(p, true))} ·{" "}
                       {CONDITION_LABEL[p.condition]}
+                      {p.audiences.length > 0 &&
+                        ` · ${audienceLabel(p.audiences)}`}
                       {p.category &&
                         ` · ${matchCategory(p.category, allCategories)}`}{" "}
                       · {totalStock(p)} in stock
@@ -591,6 +630,17 @@ export default function Dashboard() {
             onClick: () => {
               setNewCategory("");
               setCategoryDialog(true);
+            },
+          },
+          {
+            label: "Shop for",
+            icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0M16 4.5a3 3 0 0 1 0 7M18 20a6 6 0 0 0-2.5-4.9" /></svg>,
+            onClick: () => {
+              // Start from what the picked items share, so a quick Save changes nothing unexpected.
+              setNewAudiences(
+                AUDIENCES.filter((a) => picked.every((p) => p.audiences.includes(a))),
+              );
+              setAudienceDialog(true);
             },
           },
           {
@@ -685,6 +735,59 @@ export default function Dashboard() {
                 type="button"
                 className="btn-ghost flex-1"
                 onClick={() => setCategoryDialog(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+      {audienceDialog && (
+        <Dialog
+          title={`Who ${picked.length === 1 ? "is this item" : `are ${plural(picked.length, "item")}`} for?`}
+          onClose={() => setAudienceDialog(false)}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveBulkAudiences();
+            }}
+          >
+            <p className="mt-2 text-sm text-muted">
+              Pick more than one for unisex items. Leave all off to clear it.
+            </p>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {AUDIENCES.map((a) => {
+                const on = newAudiences.includes(a);
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setNewAudiences((xs) =>
+                        on ? xs.filter((x) => x !== a) : [...xs, a],
+                      )
+                    }
+                    className={`min-h-11 rounded-xl border text-sm font-medium transition active:scale-95 ${
+                      on
+                        ? "border-brand bg-brand text-white shadow-sm shadow-brand/20"
+                        : "border-line bg-surface text-muted hover:border-brand hover:text-ink"
+                    }`}
+                  >
+                    {AUDIENCE_LABEL[a]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button type="submit" className="btn-primary flex-1">
+                Save
+              </button>
+              <button
+                type="button"
+                className="btn-ghost flex-1"
+                onClick={() => setAudienceDialog(false)}
               >
                 Cancel
               </button>

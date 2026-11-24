@@ -42,6 +42,13 @@ alter table public.product_variants
 alter table public.product_variants
   add column if not exists price numeric(10,2) check (price >= 0);
 
+-- Who an item is for: any of 'men', 'women', 'kids' (several for unisex). Empty means not set.
+alter table public.products
+  add column if not exists audiences text[] not null default '{}';
+alter table public.products drop constraint if exists products_audiences_check;
+alter table public.products add constraint products_audiences_check
+  check (audiences <@ array['men', 'women', 'kids']::text[]);
+
 -- Sales the admin records after confirming an order in Messenger.
 -- Names, sizes and prices are copied in, so history stays readable after an item is edited or deleted.
 create table if not exists public.sales (

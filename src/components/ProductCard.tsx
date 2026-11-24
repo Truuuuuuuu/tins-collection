@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { formatPrice } from '../lib/format'
+import Price from './Price'
 import { imageUrl } from '../lib/images'
 import type { Product } from '../lib/types'
 import { hasSizes, isSoldOut, priceRange, totalStock } from '../lib/types'
@@ -34,7 +34,7 @@ export default function ProductCard({ product }: { product: Product }) {
       </div>
       <div className="mt-3">
         <h3 className={`truncate text-sm font-medium ${soldOut ? 'text-muted' : ''}`}>{product.name}</h3>
-        <p className={`mt-0.5 text-xl font-semibold leading-snug ${soldOut ? 'text-muted/70' : 'text-brand-ink'}`}>{/* Lowest price a shopper can pay; the product page shows each size's price. */}{formatPrice(priceRange(product).min)}</p>
+        <p className={`mt-0.5 text-xl font-semibold leading-snug ${soldOut ? 'text-muted/70' : 'text-brand-ink'}`}>{/* Lowest price a shopper can pay; the product page shows each size's price. */}<Price amount={priceRange(product).min} /></p>
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2">
         {availableSizes.length > 0 ? (

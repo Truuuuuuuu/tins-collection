@@ -20,6 +20,22 @@ export function hasSizes(variants: Pick<Variant, 'size'>[]): boolean {
   return !(variants.length === 1 && variants[0].size === NO_SIZE)
 }
 
+export type Audience = 'men' | 'women' | 'kids'
+
+export const AUDIENCE_LABEL: Record<Audience, string> = {
+  men: 'Men',
+  women: 'Women',
+  kids: 'Kids',
+}
+
+export const AUDIENCES = Object.keys(AUDIENCE_LABEL) as Audience[]
+
+/** Shown on cards and details: "Men", "Men & Women", "Men, Women & Kids". Empty when not set. */
+export function audienceLabel(audiences: Audience[]): string {
+  const labels = AUDIENCES.filter((a) => audiences.includes(a)).map((a) => AUDIENCE_LABEL[a])
+  return labels.length <= 1 ? (labels[0] ?? '') : `${labels.slice(0, -1).join(', ')} & ${labels.at(-1)}`
+}
+
 export type ItemType = 'clothing' | 'accessories'
 
 export const ITEM_TYPE_LABEL: Record<ItemType, string> = {
@@ -50,6 +66,8 @@ export interface Product {
   description: string
   price: number
   category: string
+  /** Men, women and/or kids. Empty when not set. */
+  audiences: Audience[]
   condition: Condition
   image_paths: string[]
   is_sold_out: boolean
@@ -74,6 +92,7 @@ export interface ProductInput {
   description: string
   price: number
   category: string
+  audiences: Audience[]
   condition: Condition
   image_paths: string[]
   is_sold_out: boolean

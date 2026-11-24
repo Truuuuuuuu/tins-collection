@@ -8,12 +8,13 @@ import { ProductDetailSkeleton } from "../components/Skeletons";
 import SizePicker from "../components/SizePicker";
 import SoldOutBadge from "../components/SoldOutBadge";
 import Toast from "../components/Toast";
-import { formatPrice, formatPriceRange } from "../lib/format";
+import Price, { PriceRange } from "../components/Price";
 import { imageUrl } from "../lib/images";
 import { flyToCart } from "../lib/flyToCart";
 import { fetchProduct } from "../lib/products";
 import type { Product, Variant } from "../lib/types";
 import {
+  audienceLabel,
   hasSizePrices,
   hasSizes,
   isSoldOut,
@@ -155,9 +156,11 @@ export default function ProductDetail() {
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <ConditionBadge condition={product.condition} />
-            {product.category && (
+            {(product.category || product.audiences.length > 0) && (
               <p className="text-xs font-medium uppercase tracking-[0.2em] text-brand-ink">
-                {product.category}
+                {[audienceLabel(product.audiences), product.category]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             )}
           </div>
@@ -167,12 +170,12 @@ export default function ProductDetail() {
           {/* The picked size's price; the full range until a size is picked (or when sold out). */}
           <p className="mt-3 text-xl font-semibold" aria-live="polite">
             {variant && !soldOut
-              ? formatPrice(sizePrice(product, variant))
-              : formatPriceRange(priceRange(product))}
+              ? <Price amount={sizePrice(product, variant)} />
+              : <PriceRange {...priceRange(product)} />}
           </p>
           {hasSizePrices(product) && !soldOut && (
             <p className="mt-1 text-xs text-muted">
-              Price depends on size: {formatPriceRange(priceRange(product))}
+              Price depends on size: <PriceRange {...priceRange(product)} />
             </p>
           )}
           {product.description && (

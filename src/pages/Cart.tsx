@@ -5,7 +5,7 @@ import ConfirmSheet from "../components/ConfirmSheet";
 import EmptyBagIllustration from "../components/EmptyBagIllustration";
 import QtyStepper from "../components/QtyStepper";
 import Toast from "../components/Toast";
-import { formatPrice } from "../lib/format";
+import Price from "../components/Price";
 import { imageUrl } from "../lib/images";
 import {
   buildOrderMessage,
@@ -140,17 +140,14 @@ export default function Cart() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{l.name}</p>
                   <p className="text-sm text-muted">
-                    {[
-                      sizeLabel(l.size),
-                      l.condition === "preloved" ? "Pre-loved" : null,
-                      formatPrice(l.price),
-                    ]
+                    {[sizeLabel(l.size), l.condition === "preloved" ? "Pre-loved" : null]
                       .filter(Boolean)
-                      .join(" · ")}
+                      .map((x) => `${x} · `)}
+                    <Price amount={l.price} />
                   </p>
                 </div>
                 <p className="shrink-0 font-semibold">
-                  {formatPrice(l.price * l.qty)}
+                  <Price amount={l.price * l.qty} />
                 </p>
               </div>
               <div className="flex items-center justify-between">
@@ -173,7 +170,7 @@ export default function Cart() {
 
       <div className="mt-6 flex items-center justify-between text-lg">
         <span>Total</span>
-        <span className="font-semibold">{formatPrice(cartTotal(lines))}</span>
+        <span className="font-semibold"><Price amount={cartTotal(lines)} /></span>
       </div>
 
       <div className="mt-6 rounded-2xl border border-line bg-surface p-5">

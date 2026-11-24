@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import EmptyRackIllustration from "../components/EmptyRackIllustration";
 import FilterMenu from "../components/FilterMenu";
 import FloatingSearch from "../components/FloatingSearch";
@@ -8,8 +8,8 @@ import type { SortOrder } from "../lib/sort";
 import SortMenu from "../components/SortMenu";
 import { ProductGridSkeleton } from "../components/Skeletons";
 import type { Condition } from "../lib/types";
-import type { ItemType } from "../lib/types";
-import { CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType, priceRange } from "../lib/types";
+import type { Audience, ItemType } from "../lib/types";
+import { AUDIENCE_LABEL, CONDITION_LABEL, ITEM_TYPE_LABEL, isSoldOut, itemType, priceRange } from "../lib/types";
 import { categoryKey, categoryOptions } from "../lib/categories";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { usePagination } from "../lib/usePagination";
@@ -23,6 +23,25 @@ const TYPE_KEYWORDS: Record<string, ItemType> = {
   clothes: "clothing",
 };
 
+// Searching "men", "ladies", "kids"… shows every item for them.
+const AUDIENCE_KEYWORDS: Record<string, Audience> = {
+  men: "men",
+  mens: "men",
+  "men's": "men",
+  male: "men",
+  women: "women",
+  womens: "women",
+  "women's": "women",
+  ladies: "women",
+  female: "women",
+  kids: "kids",
+  kid: "kids",
+  children: "kids",
+};
+
+// Homepage tabs, in the order shoppers see them.
+const AUDIENCE_TABS = ["all", "women", "men", "kids"] as const;
+
 const CONDITIONS = ["all", "new", "preloved"] as const;
 
 export default function Catalog() {
@@ -30,10 +49,35 @@ export default function Catalog() {
   const { query, setQuery } = useSearch();
   const [categories, setCategories] = useState<string[]>([]);
   const [types, setTypes] = useState<ItemType[]>([]);
+  const [audiences, setAudiences] = useState<Audience[]>([]);
+  // The tab that matches the current pick; none when several were ticked in Filters.
+  const audienceTab =
+    audiences.length === 0 ? "all" : audiences.length === 1 ? audiences[0] : null;
   const [hideSoldOut, setHideSoldOut] = useState(false);
   const [condition, setCondition] = useState<Condition | "all">("all");
   const [sort, setSort] = useState<SortOrder>("newest");
   const gridTop = useRef<HTMLDivElement>(null);
+  // The pink bar under the active tab slides to wherever that tab sits (tabs differ in width).
+  const tabsNav = useRef<HTMLElement>(null);
+  const tabButtons = useRef<Partial<Record<string, HTMLButtonElement>>>({});
+  const [bar, setBar] = useState<{ left: number; width: number } | null>(null);
+  // No slide on first paint, only when switching.
+  const [barReady, setBarReady] = useState(false);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = audienceTab ? tabButtons.current[audienceTab] : undefined;
+      setBar(el ? { left: el.offsetLeft, width: el.offsetWidth } : null);
+    };
+    measure();
+    const frame = requestAnimationFrame(() => setBarReady(true));
+    // Re-measure when the row resizes, e.g. once the display font loads or the screen rotates.
+    const observer = new ResizeObserver(measure);
+    if (tabsNav.current) observer.observe(tabsNav.current);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [audienceTab]);
   // Matches Tailwind's md breakpoint: 10 per page on phones, 20 on larger screens.
   const perPage = useMediaQuery("(min-width: 768px)") ? 20 : 10;
   // On large screens the search lives in the sticky header, so no in-page or floating search.
@@ -49,9 +93,15 @@ export default function Catalog() {
     const q = query.trim().toLowerCase();
     // Searching a type's name (e.g. "Accessories", "CLOTHING") shows every item of that type.
     const searchedType = TYPE_KEYWORDS[q];
+    const searchedAudience = AUDIENCE_KEYWORDS[q];
     return (
       products
         .filter((p) => types.length === 0 || types.includes(itemType(p)))
+        .filter(
+          (p) =>
+            audiences.length === 0 ||
+            audiences.some((a) => p.audiences.includes(a)),
+        )
         .filter(
           (p) =>
             categories.length === 0 ||
@@ -63,6 +113,7 @@ export default function Catalog() {
           (p) =>
             !q ||
             (searchedType && itemType(p) === searchedType) ||
+            (searchedAudience && p.audiences.includes(searchedAudience)) ||
             p.name.toLowerCase().includes(q) ||
             categoryKey(p.category).includes(q) ||
             p.description.toLowerCase().includes(q),
@@ -77,7 +128,7 @@ export default function Catalog() {
             (sort === "price-desc" ? priceRange(b).max - priceRange(a).max : 0),
         )
     );
-  }, [products, query, types, categories, condition, hideSoldOut, sort]);
+  }, [products, query, types, audiences, categories, condition, hideSoldOut, sort]);
 
 
   // Start over from page 1 whenever the search, filters or sort change.
@@ -89,7 +140,7 @@ export default function Catalog() {
   } = usePagination(
     visible,
     perPage,
-    JSON.stringify([query, types, categories, condition, hideSoldOut, sort]),
+    JSON.stringify([query, types, audiences, categories, condition, hideSoldOut, sort]),
   );
 
   const goTo = (p: number) => {
@@ -115,6 +166,44 @@ export default function Catalog() {
         </p>
       </section>
 
+      <nav
+        ref={tabsNav}
+        className="relative mb-6 flex gap-6 overflow-x-auto overflow-y-hidden border-b border-line [scrollbar-width:none] sm:gap-8"
+        aria-label="Shop for"
+      >
+        {AUDIENCE_TABS.map((t) => {
+          const on = t === audienceTab;
+          return (
+            <button
+              key={t}
+              ref={(el) => {
+                tabButtons.current[t] = el ?? undefined;
+              }}
+              onClick={() => setAudiences(t === "all" ? [] : [t])}
+              aria-pressed={on}
+              className={`relative shrink-0 pb-3.5 pt-1 font-display text-lg transition-colors duration-300 sm:text-xl ${
+                on ? "text-ink" : "text-muted hover:text-ink"
+              }`}
+            >
+              {t === "all" ? "All" : AUDIENCE_LABEL[t]}
+            </button>
+          );
+        })}
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-brand motion-reduce:transition-none ${
+            barReady
+              ? "transition-[transform,width,opacity] duration-300 ease-[cubic-bezier(.16,1,.3,1)]"
+              : ""
+          }`}
+          style={{
+            width: bar?.width ?? 0,
+            transform: `translateX(${bar?.left ?? 0}px)`,
+            opacity: bar ? 1 : 0,
+          }}
+        />
+      </nav>
+
       <div
         ref={gridTop}
         id="results"
@@ -134,6 +223,8 @@ export default function Catalog() {
           <FilterMenu
             types={types}
             onTypesChange={setTypes}
+            audiences={audiences}
+            onAudiencesChange={setAudiences}
             categories={allCategories}
             selected={categories}
             onChange={setCategories}
@@ -173,9 +264,14 @@ export default function Catalog() {
         </div>
       </div>
 
-      {(types.length > 0 || categories.length > 0 || hideSoldOut) && (
+      {(types.length > 0 || audiences.length > 1 || categories.length > 0 || hideSoldOut) && (
         <div className="-mt-3 mb-6 flex flex-wrap items-center gap-2">
           {[
+            ...(audiences.length > 1 ? audiences : []).map((a) => ({
+              key: `audience-${a}`,
+              label: AUDIENCE_LABEL[a],
+              remove: () => setAudiences((xs) => xs.filter((x) => x !== a)),
+            })),
             ...types.map((t) => ({
               key: `type-${t}`,
               label: ITEM_TYPE_LABEL[t],
@@ -220,6 +316,7 @@ export default function Catalog() {
           <button
             onClick={() => {
               setTypes([]);
+              setAudiences([]);
               setCategories([]);
               setHideSoldOut(false);
             }}
@@ -242,7 +339,7 @@ export default function Catalog() {
         </div>
       ) : visible.length === 0 ? (
         <p
-          key={condition}
+          key={`${condition}-${audiences.join()}`}
           className="py-20 text-center text-muted motion-safe:animate-[tab-in_.4s_ease-out_both]"
         >
           Nothing matches your search.
@@ -251,7 +348,7 @@ export default function Catalog() {
         <>
           {/* Keyed on the tab so switching tabs remounts the grid and replays the staggered fade-in. */}
           <div
-            key={condition}
+            key={`${condition}-${audiences.join()}`}
             className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 lg:grid-cols-4"
           >
             {pageItems.map((p, i) => (

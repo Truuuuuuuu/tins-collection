@@ -3,8 +3,8 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import type { CategoryOption } from '../lib/categories'
-import type { Condition, ItemType, StockStatus } from '../lib/types'
-import { CONDITION_LABEL, ITEM_TYPE_LABEL, STOCK_STATUS_LABEL } from '../lib/types'
+import type { Audience, Condition, ItemType, StockStatus } from '../lib/types'
+import { AUDIENCE_LABEL, AUDIENCES, CONDITION_LABEL, ITEM_TYPE_LABEL, STOCK_STATUS_LABEL } from '../lib/types'
 
 interface Props {
   types: ItemType[]
@@ -13,6 +13,9 @@ interface Props {
   /** Selected category keys. */
   selected: string[]
   onChange: (selected: string[]) => void
+  /** Men, women, kids. */
+  audiences: Audience[]
+  onAudiencesChange: (audiences: Audience[]) => void
   /** Shop: a single "Hide sold out" switch. */
   hideSoldOut?: boolean
   onHideSoldOutChange?: (hide: boolean) => void
@@ -34,7 +37,7 @@ const CLOSE_MS = 220
 const toggled = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((x) => x !== value) : [...list, value])
 
 /** Filter-icon button that opens checklists of item types and categories (several can be picked) plus availability. */
-export default function FilterMenu({ types, onTypesChange, categories, selected, onChange, hideSoldOut = false, onHideSoldOutChange, conditions, onConditionsChange, stock, onStockChange, resultCount, align = 'left' }: Props) {
+export default function FilterMenu({ types, onTypesChange, categories, selected, onChange, audiences, onAudiencesChange, hideSoldOut = false, onHideSoldOutChange, conditions, onConditionsChange, stock, onStockChange, resultCount, align = 'left' }: Props) {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   // Phones get a bottom sheet; larger screens keep the dropdown.
@@ -132,10 +135,11 @@ export default function FilterMenu({ types, onTypesChange, categories, selected,
     onChange([])
     onHideSoldOutChange?.(false)
     onConditionsChange?.([])
+    onAudiencesChange([])
     onStockChange?.([])
   }
 
-  const activeCount = types.length + selected.length + Number(hideSoldOut) + (conditions?.length ?? 0) + (stock?.length ?? 0)
+  const activeCount = types.length + audiences.length + selected.length + Number(hideSoldOut) + (conditions?.length ?? 0) + (stock?.length ?? 0)
   const toggleType = (t: ItemType) => onTypesChange(toggled(types, t))
   const toggle = (c: string) => onChange(toggled(selected, c))
 
@@ -144,17 +148,31 @@ export default function FilterMenu({ types, onTypesChange, categories, selected,
 
   const sections = (
     <>
-      <span className="block px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted">Type</span>
+      <span className="block px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted">Shop for</span>
       <ul>
-        {(Object.keys(ITEM_TYPE_LABEL) as ItemType[]).map((t) => (
-          <li key={t}>
+        {AUDIENCES.map((a) => (
+          <li key={a}>
             <label className={row}>
-              <input type="checkbox" className={box} checked={types.includes(t)} onChange={() => toggleType(t)} />
-              {ITEM_TYPE_LABEL[t]}
+              <input type="checkbox" className={box} checked={audiences.includes(a)} onChange={() => onAudiencesChange(toggled(audiences, a))} />
+              {AUDIENCE_LABEL[a]}
             </label>
           </li>
         ))}
       </ul>
+
+      <div className="mt-2 border-t border-line pt-2">
+        <span className="block px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted">Type</span>
+        <ul>
+          {(Object.keys(ITEM_TYPE_LABEL) as ItemType[]).map((t) => (
+            <li key={t}>
+              <label className={row}>
+                <input type="checkbox" className={box} checked={types.includes(t)} onChange={() => toggleType(t)} />
+                {ITEM_TYPE_LABEL[t]}
+              </label>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {conditions && onConditionsChange && (
         <div className="mt-2 border-t border-line pt-2">
