@@ -14,7 +14,9 @@ import { PRESET_COLORS, presetColor } from '../../lib/colors'
 import { AUDIENCE_LABEL, AUDIENCES, CONDITION_LABEL, hasSizes, NO_SIZE } from '../../lib/types'
 import type { Audience, Condition, VariantInput } from '../../lib/types'
 
-const MAX_IMAGES = 5
+// Each photo is compressed to about 250 KB, so 10 photos is about 2.5 MB per item
+// (around 400 full items on Supabase's free 1 GB of storage).
+const MAX_IMAGES = 10
 
 // A photo is either already in storage (path) or picked but not uploaded yet (file).
 // `colorKey` tags it with one of the item's colors, so shoppers see it when they pick that color.
