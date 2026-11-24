@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { SHOP_NAME } from "../lib/format";
 import { messengerUrl } from "../lib/messenger";
-import { facebookUrl, mapsUrl, storeAddress } from "../lib/shop";
+import { facebookLink, mapsUrl, storeAddress } from "../lib/shop";
 import Wordmark from "./Wordmark";
 
 const STEPS = [
@@ -15,7 +15,7 @@ export default function Footer() {
   if (pathname.startsWith("/admin")) return null;
   // The homepage has a floating search bar at the bottom below lg, so leave room for it.
   const roomForSearch = pathname === "/";
-  const facebook = facebookUrl();
+  const facebook = facebookLink();
 
   return (
     <footer
@@ -117,9 +117,10 @@ export default function Footer() {
               {facebook && (
                 <li>
                   <a
-                    href={facebook}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={facebook.href}
+                    {...(facebook.newTab
+                      ? { target: "_blank", rel: "noopener noreferrer" }
+                      : {})}
                     className="group flex min-h-11 items-center gap-3"
                   >
                     <svg
@@ -149,7 +150,9 @@ export default function Footer() {
                         >
                           <path d="M7 17 17 7M8 7h9v9" />
                         </svg>
-                        <span className="sr-only">(opens in a new tab)</span>
+                        {facebook.newTab && (
+                          <span className="sr-only">(opens in a new tab)</span>
+                        )}
                       </span>
                       <span className="block text-muted">
                         Our official Facebook page
